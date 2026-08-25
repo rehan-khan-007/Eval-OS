@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Text, Index
+from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, Text, Index, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
@@ -112,6 +112,7 @@ class MetricResult(Base):
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     execution: Mapped["Execution"] = relationship(back_populates="metrics")
+    human_labels: Mapped[list["HumanLabel"]] = relationship(back_populates="metric", cascade="all, delete-orphan")
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
@@ -125,3 +126,17 @@ class DocumentChunk(Base):
     __table_args__ = (
         Index("idx_document_source", "source"),
     )
+
+class HumanLabel(Base):
+    __tablename__ = "human_labels"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    metric_result_id: Mapped[str] = mapped_column(ForeignKey("metric_results.id"), nullable=False)
+    execution_id: Mapped[str] = mapped_column(ForeignKey("executions.id"), nullable=False)
+    
+    # True if human agrees with the LLM judge's assessment, False if human disagrees
+    agrees_with_judge: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    metric: Mapped["MetricResult"] = relationship(back_populates="human_labels")
