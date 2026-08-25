@@ -3,6 +3,7 @@ import time
 from openai import AsyncOpenAI
 from adapters.base import BaseSystemAdapter
 from retrieval import RetrievalEngine
+from cache import generate_cache_key, get_cached, set_cached
 
 class RAGAdapter(BaseSystemAdapter):
     def __init__(self, model: str = "openai/gpt-4o-mini", retriever_type: str = "hybrid"):
@@ -34,6 +35,19 @@ class RAGAdapter(BaseSystemAdapter):
             
             system_prompt = "Answer the user's question using only the provided context. If the context doesn't contain the answer, say so plainly."
             user_prompt = f"Context:\n{context_text}\n\nQuestion: {question}"
+            
+            # 1. Check Cache
+            cache_key = generate_cache_key(self.model, system_prompt, user_prompt)
+            cached_response = await get_cached(cache_key)
+            
+            if cached_response:
+                cached_response["retrieved_evidence"] = retrieved_evidence
+                cached_response["latency_ms"] = (time.time() - start_time) * 1000
+                cached_response["cost"] = 0.0
+                cached_response["error"] = None
+                return cached_response
+
+            # 2. Cache Miss - Call API
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -45,9 +59,7 @@ class RAGAdapter(BaseSystemAdapter):
                 temperature=0.0
             )
             
-            latency = (time.time() - start_time) * 1000
             choice = response.choices[0].message
-            
             tokens_in = response.usage.prompt_tokens if response.usage else 0
             tokens_out = response.usage.completion_tokens if response.usage else 0
             
@@ -64,8 +76,19 @@ class RAGAdapter(BaseSystemAdapter):
                 elif "llama-3.1-70b" in self.model:
                     cost = (tokens_in * 0.55 + tokens_out * 0.75) / 1_000_000
 
-            return {
+            result_data = {
                 "answer": choice.content or "",
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out
+            }
+
+            # Save to cache
+            await set_cached(cache_key, result_data)
+
+            latency = (time.time() - start_time) * 1000
+
+            return {
+                "answer": result_data["answer"],
                 "tool_calls": [],
                 "retrieved_evidence": retrieved_evidence,
                 "latency_ms": latency,
