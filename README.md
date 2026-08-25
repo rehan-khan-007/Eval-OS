@@ -66,6 +66,8 @@ EvalOS is asynchronous by design, ensuring hundreds of concurrent API calls don'
 *   **Statistics:** `scikit-learn` and `numpy` for Bootstrap CIs and Cohen's Kappa.
 
 ### Project Structure
+
+```text
 Eval-OS/
 ├── cli/                  # Modular Typer commands (run, inspect, compare, label)
 ├── adapters/             # System interfaces (OpenRouter, RAG, Mock)
@@ -74,6 +76,8 @@ Eval-OS/
 ├── analysis_engine.py    # Aggregation, Slicing, A/B, and Regression logic
 ├── cache.py              # Upstash Redis caching layer
 └── docs/benchmarks/      # Real, documented benchmark results
+
+```
 
 ---
 
