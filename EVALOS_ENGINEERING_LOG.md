@@ -78,3 +78,75 @@ A rigorous, honest log of the architecture decisions, bugs found, and real resul
 
 **Real bug found and fixed (Kappa Zero-Variance):** The initial Kappa calculation returned `0.0000` despite the human agreeing with the LLM Judge 100% of the time. 
 **Fix:** Cohen's Kappa requires variance in the ratings to calculate chance-adjusted agreement. Because the human agreed with the LLM Judge on 100% of the samples (variance = 0), the Kappa formula mathematically collapses to 0.0. Fixed by calculating and printing Raw Agreement alongside Kappa to prevent this statistical edge case from misleading the benchmark.
+
+---
+
+## Phase 7: CLI Refactor & Retrieval Ablation
+
+**What was built:** Refactored the monolithic `cli.py` into a modular `cli/` directory (`setup_cmds.py`, `run_cmds.py`, etc.). Implemented Dense, BM25, and Hybrid (RRF) retrieval methods in `retrieval.py`.
+
+**Real bug found and fixed (SyntaxError in f-string):** After splitting the CLI, `cli/setup_cmds.py` crashed with `SyntaxError: f-string: single '}' is not allowed`. 
+**Fix:** I had accidentally left a typo `dv_id = f"dv-{ds_id}-v1}"` with an extra brace. Removed the stray `}`.
+
+**Real bug found and fixed (RuntimeWarning: coroutine never awaited):** Typer commands crashed because the top-level functions were defined as `async def`, but Typer expects standard `def` functions. 
+**Fix:** Wrapped the `async` logic inside standard `def` functions that use `asyncio.run()` internally for each command.
+
+**Real bug found and fixed (ModuleNotFoundError in migrations):** `migrations/add_bm25_support.py` failed with `ModuleNotFoundError: No module named 'database'`. 
+**Fix:** The script was inside the `migrations/` folder and couldn't find the parent modules. Fixed by adding `sys.path.insert(0, str(Path(__file__).resolve().parents[1]))` to the script.
+
+**Result:** Dense-only (88.9%) beat Hybrid (84.7%). BM25 was so poor (31.9%) that fusing it with Dense via RRF introduced noise and dragged down the performance. This proved "Hybrid is always better" is a myth.
+
+---
+
+## Phase 8: Slice-Based Evaluation
+
+**What was built:** `migrations/update_domains.py` to backfill domain tags based on source document prefixes. Updated `AnalysisEngine` to support slicing metrics by `domain` or `task_type`.
+
+**Result:** Isolated the 88.9% global recall failure to the Quantum domain (84.4% recall). Finance, Entrepreneurship, and Thermal domains all scored 91.7% or higher.
+
+---
+
+## Phase 9: A/B Comparison & Statistical Significance
+
+**What was built:** `compare-runs` command and `check_regression` command in the CLI. Added a 1000-iteration Bootstrap simulation to calculate 95% Confidence Intervals.
+
+**Result:** EvalOS proved that the 4.2% recall difference between Dense and Hybrid was **NOT statistically significant** at this sample size (CI touched 0.0). This prevented us from falsely concluding Dense was definitively better.
+
+---
+
+## Phase 10: Answerability / Abstention
+
+**What was built:** `AbstentionEvaluator` to check if the system correctly says "I don't know" when it lacks context.
+
+**Result:** 80.6% abstention accuracy. EvalOS proved the LLM was overly cautious—it abstained on 6 questions where it actually had the correct context (100% faithfulness, but 0% abstention accuracy for those examples).
+
+---
+
+## Phase 11: Caching & Cost Optimization (Upstash Redis)
+
+**What was built:** `cache.py` module integrating Upstash Redis to cache LLM generations and Embeddings.
+
+**Real bug found and fixed (Redis URL ValueError):** The Redis client crashed with `ValueError: Redis URL must specify one of the following schemes`. 
+**Fix:** The `.env` file literally contained `REDIS_URL=YOUR_EXISTING_UPSTASH_REDIS_URL` because the placeholder text was pasted instead of the real URL. Instructed user to replace with the real `rediss://...` string.
+
+**Real bug found and fixed (Cache Miss on Judge):** The second run of the evaluation was still slow and costing money. 
+**Root Cause:** I applied the caching logic to `rag_adapter.py` (generation) but forgot to apply it to `evaluators/llm_judge.py` (the judge). The judge was still making 36 real API calls every run.
+**Fix:** Added the exact same `get_cached` / `set_cached` logic to `LLMJudgeEvaluator`. The second run then successfully hit the cache for both generation and judging, finishing in seconds for $0.00.
+
+**Architecture Decision:** We shared the Upstash Redis instance with AgentOS to avoid hitting the free tier limit. To prevent key collisions, all EvalOS keys are prefixed with `evalos:` in `cache.py`.
+
+---
+
+## Phase 12: Failure Diagnosis Taxonomy
+
+**What was built:** `diagnose-run` command in the CLI to classify failures into Retrieval, Generation, System, and Negative Control categories.
+
+**Result:** Diagnosed 6 "Generation Failures" where faithfulness was 100% but the LLM abstained unnecessarily. This proved EvalOS can explain *why* a system fails, not just *that* it fails.
+
+---
+
+## Phase 13: Regression Testing
+
+**What was built:** `regression-check` command to compare a new run against a baseline with a configurable threshold.
+
+**Result:** Successfully flagged Hybrid retrieval as a regression against Dense (4.2% recall drop, 1.8% faithfulness drop) with a 1% threshold, proving EvalOS can act as a CI/CD gate.
