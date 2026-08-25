@@ -28,6 +28,8 @@ infrastructure and real API calls — not estimates.
    *Proves the 4-point recall gap between Dense and Hybrid is NOT statistically significant at this sample size.*
 5. **[Answerability & Abstention](docs/benchmarks/05_answerability_abstention.md)**
    *Proves the system abstains correctly when retrieval fails, rather than hallucinating (80.6% abstention accuracy, 96.8% faithfulness).*
+6. **[Evaluation Caching & Cost Efficiency](docs/benchmarks/06_caching_efficiency.md)**
+   *Proves iterative benchmarking is free: a cached re-run of the 36-question dataset costs $0.00 and finishes in seconds.*
 
 ---
 
@@ -46,3 +48,4 @@ The infrastructure supporting these benchmarks is verified:
   bottlenecks during large-scale evaluation runs.
 - **CLI-first:** All benchmarks are reproducible via Typer CLI
   commands, not hardcoded scripts.
+- **Redis Caching:** LLM generations and Embeddings are cached in Upstash Redis (prefixed with `evalos:`) to enable $0.00 iterative testing.
