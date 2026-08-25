@@ -46,8 +46,8 @@ Runs the dataset through 5 different LLMs, calculating real cost, latency, recal
 ### 3. Diagnose Failures
 Instead of just seeing a score, see *why* it failed.
 `python cli.py diagnose-run run-ccbcb9b2`
-# [2] Retrieval Failures (2)
-# [3] Generation Failures (6)
+### [2] Retrieval Failures (2)
+### [3] Generation Failures (6)
 
 ### 4. Check for Regressions (CI/CD)
 Compare a new run against a baseline. Fails if recall drops by >2%.
