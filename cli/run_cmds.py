@@ -2,7 +2,7 @@ import asyncio
 import typer
 from database import AsyncSessionLocal
 from models import EvaluationExample, SystemConfig
-from evaluators.deterministic import ToolSelectionEvaluator, SourceRecallEvaluator, LatencyEvaluator
+from evaluators.deterministic import ToolSelectionEvaluator, SourceRecallEvaluator, LatencyEvaluator, AbstentionEvaluator
 from evaluators.llm_judge import LLMJudgeEvaluator
 from adapters.mock_adapter import MockSystemAdapter
 from adapters.openrouter_adapter import OpenRouterAdapter
@@ -73,7 +73,8 @@ def run_eval(
         if examples[0]["metadata"].get("expected_sources") is not None:
             evaluators.append(SourceRecallEvaluator(k=3))
             evaluators.append(LLMJudgeEvaluator(judge_model=judge_model))
-            typer.echo("Detected RAG dataset. Using SourceRecallEvaluator and LLMJudgeEvaluator.")
+            evaluators.append(AbstentionEvaluator())
+            typer.echo("Detected RAG dataset. Using SourceRecallEvaluator, LLMJudgeEvaluator, and AbstentionEvaluator.")
 
         engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
         typer.echo("Starting evaluation run...")
@@ -132,7 +133,7 @@ def run_benchmark(
                     typer.echo(f"Reusing existing SystemConfig: {sys_config_id}")
 
             adapter = RAGAdapter(model=model, retriever_type=retriever)
-            evaluators = [LatencyEvaluator(), SourceRecallEvaluator(k=3), LLMJudgeEvaluator(judge_model=judge_model)]
+            evaluators = [LatencyEvaluator(), SourceRecallEvaluator(k=3), LLMJudgeEvaluator(judge_model=judge_model), AbstentionEvaluator()]
             
             engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
             run_id = await engine.execute_run(dataset_version_id, examples)

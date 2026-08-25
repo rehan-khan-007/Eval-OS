@@ -52,3 +52,35 @@ class LatencyEvaluator(BaseEvaluator):
     async def evaluate(self, input_data, system_output, retrieved_evidence):
         latency = system_output.get("latency_ms", 0.0)
         return {"score": latency, "explanation": "Latency in milliseconds."}
+
+class AbstentionEvaluator(BaseEvaluator):
+    """Measures if the system correctly abstained or answered based on expected sources."""
+    def __init__(self):
+        super().__init__(name="abstention_accuracy", version="v1")
+        self.abstention_phrases = [
+            "i don't know", "i do not know", "cannot answer", "can't answer",
+            "not enough information", "does not provide", "doesn't provide",
+            "context does not", "context doesn't", "no information", "not provided"
+        ]
+
+    async def evaluate(self, input_data, system_output, retrieved_evidence):
+        expected_sources = input_data.get("metadata", {}).get("expected_sources", [])
+        answer = (system_output.get("answer", "") or "").lower()
+        
+        # Check if the answer contains any abstention phrases
+        abstained = any(phrase in answer for phrase in self.abstention_phrases)
+        
+        # If there are no expected sources, the system SHOULD abstain (score 1.0 if abstained)
+        # If there are expected sources, the system SHOULD NOT abstain (score 1.0 if NOT abstained)
+        should_abstain = len(expected_sources) == 0
+        
+        if should_abstain:
+            score = 1.0 if abstained else 0.0
+        else:
+            score = 1.0 if not abstained else 0.0
+            
+        return {
+            "score": score,
+            "explanation": f"System {'abstained' if abstained else 'answered'}, expected {'abstention' if should_abstain else 'an answer'}.",
+            "evidence_breakdown": {"abstained": abstained, "should_abstain": should_abstain}
+        }

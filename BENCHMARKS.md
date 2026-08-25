@@ -26,6 +26,8 @@ infrastructure and real API calls — not estimates.
    *Proves the LLM-as-Judge evaluator is highly reliable via human auditing (100% raw agreement).*
 4. **[A/B Comparison: Dense vs Hybrid](docs/benchmarks/04_ab_comparison.md)**
    *Proves the 4-point recall gap between Dense and Hybrid is NOT statistically significant at this sample size.*
+5. **[Answerability & Abstention](docs/benchmarks/05_answerability_abstention.md)**
+   *Proves the system abstains correctly when retrieval fails, rather than hallucinating (80.6% abstention accuracy, 96.8% faithfulness).*
 
 ---
 
