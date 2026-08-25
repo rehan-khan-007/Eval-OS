@@ -4,8 +4,9 @@ from database import AsyncSessionLocal
 from models import SystemConfig, EvaluationRun, Execution, MetricResult
 
 class RunEngine:
-    def __init__(self, system_config: SystemConfig, system_adapter, evaluators: list):
-        self.system_config = system_config
+    def __init__(self, sys_config_id: str, config_name: str, system_adapter, evaluators: list):
+        self.sys_config_id = sys_config_id
+        self.config_name = config_name
         self.system_adapter = system_adapter
         self.evaluators = evaluators
 
@@ -14,7 +15,7 @@ class RunEngine:
             run_id = f"run-{uuid.uuid4().hex[:8]}"
             run = EvaluationRun(
                 id=run_id,
-                system_config_id=self.system_config.id,
+                system_config_id=self.sys_config_id,
                 dataset_version_id=dataset_version_id,
                 status="running",
                 started_at=datetime.now(timezone.utc)
@@ -45,7 +46,7 @@ class RunEngine:
                 db.add(execution)
 
                 for evaluator in self.evaluators:
-                    result = evaluator.evaluate(ex, sys_output, sys_output.get("retrieved_evidence", []))
+                    result = await evaluator.evaluate(ex, sys_output, sys_output.get("retrieved_evidence", []))
                     metric = MetricResult(
                         id=f"metric-{uuid.uuid4().hex[:8]}",
                         execution_id=execution_id,
