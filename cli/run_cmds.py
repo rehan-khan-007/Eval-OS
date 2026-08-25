@@ -15,7 +15,8 @@ def run_eval(
     config_name: str = typer.Option("OpenRouterAgent", "--config-name"),
     system: str = typer.Option("openrouter", "--system", help="mock, openrouter, or rag"),
     model: str = typer.Option("openai/gpt-4o-mini", "--model"),
-    judge_model: str = typer.Option("openai/gpt-4o-mini", "--judge-model")
+    judge_model: str = typer.Option("openai/gpt-4o-mini", "--judge-model"),
+    retriever: str = typer.Option("hybrid", "--retriever", help="dense, bm25, or hybrid")
 ):
     async def run():
         async with AsyncSessionLocal() as db:
@@ -44,6 +45,7 @@ def run_eval(
                     id=sys_config_id,
                     config_name=config_name,
                     model=model,
+                    retriever_type=retriever,
                     prompt_version="v1"
                 )
                 db.add(sys_config)
@@ -58,8 +60,8 @@ def run_eval(
             adapter = OpenRouterAdapter(model=model)
             typer.echo(f"Using OpenRouterAdapter with model: {model}")
         elif system == "rag":
-            adapter = RAGAdapter(model=model)
-            typer.echo(f"Using RAGAdapter with model: {model}")
+            adapter = RAGAdapter(model=model, retriever_type=retriever)
+            typer.echo(f"Using RAGAdapter with model: {model} and retriever: {retriever}")
         else:
             typer.echo("Invalid system. Choose 'mock', 'openrouter', or 'rag'.")
             return
@@ -81,8 +83,9 @@ def run_eval(
 
 def run_benchmark(
     dataset_version_id: str = typer.Option(..., "--dataset-version"),
-    models: str = typer.Option("openai/gpt-4o-mini,google/gemini-3.7-flash,anthropic/claude-haiku-4.5,meta-llama/llama-3.1-70b-instruct,openai/gpt-4o", "--models", help="Comma-separated list of models"),
-    judge_model: str = typer.Option("openai/gpt-4o-mini", "--judge-model")
+    models: str = typer.Option("openai/gpt-4o-mini", "--models", help="Comma-separated list of models"),
+    judge_model: str = typer.Option("openai/gpt-4o-mini", "--judge-model"),
+    retriever: str = typer.Option("hybrid", "--retriever", help="dense, bm25, or hybrid")
 ):
     """Runs a benchmark across multiple models for the same dataset."""
     async def run():
@@ -105,9 +108,9 @@ def run_benchmark(
         run_ids = []
         
         for model in model_list:
-            typer.echo(f"\n{'='*50}\nStarting benchmark for: {model}\n{'='*50}")
+            typer.echo(f"\n{'='*50}\nStarting benchmark for: {model} ({retriever})\n{'='*50}")
             
-            config_name = f"Benchmark-{model.split('/')[-1]}"
+            config_name = f"Benchmark-{model.split('/')[-1]}-{retriever}"
             sys_config_id = f"cfg-{config_name.lower().replace(' ', '-').replace('.', '')}"
             
             async with AsyncSessionLocal() as db:
@@ -120,6 +123,7 @@ def run_benchmark(
                         id=sys_config_id,
                         config_name=config_name,
                         model=model,
+                        retriever_type=retriever,
                         prompt_version="v1"
                     )
                     db.add(sys_config)
@@ -127,7 +131,7 @@ def run_benchmark(
                 else:
                     typer.echo(f"Reusing existing SystemConfig: {sys_config_id}")
 
-            adapter = RAGAdapter(model=model)
+            adapter = RAGAdapter(model=model, retriever_type=retriever)
             evaluators = [LatencyEvaluator(), SourceRecallEvaluator(k=3), LLMJudgeEvaluator(judge_model=judge_model)]
             
             engine = RunEngine(sys_config_id, config_name, adapter, evaluators)

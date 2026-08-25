@@ -8,7 +8,7 @@ states exactly what was measured, how, and what its limitations are.
 
 | Metric | Result |
 |---|---|
-| Retrieval recall@3 (47 docs, multi-domain) | **88.9%** |
+| Retrieval recall@3 (47 docs, multi-domain) | **88.9%** (Dense) |
 | Models benchmarked | 5 (gpt-4o-mini, gpt-4o, claude-haiku-4.5, gemini-3.7-flash, llama-3.1-70b) |
 | Best Faithfulness | **98.2%** (claude-haiku-4.5) |
 | Best Value (Quality/Cost) | **gpt-4o-mini** (96.8% faithfulness for $0.006) |
@@ -54,6 +54,41 @@ response's actual `usage` field (real token counts), not estimated.
   ("answer *only* using context"), dropping to 89.1% faithfulness,
   showing it is more prone to using outside knowledge than Anthropic
   or OpenAI models in this specific RAG configuration.
+
+---
+
+## Retrieval Ablation (Dense vs BM25 vs Hybrid)
+
+**What was measured:** Source-level recall@3 for three retrieval
+methods run in isolation — Dense-only (pgvector cosine), BM25-only
+(Postgres tsvector), and Hybrid (RRF-fused) — against the same
+36-question dataset. Directly tests the assumption that Hybrid
+retrieval is always superior to Dense-only.
+
+**How:** `python cli.py run-eval --system rag --retriever <method>`
+using `openai/gpt-4o-mini` for generation and `openai/text-embedding-3-small`
+for embeddings. EvalOS executed all three runs sequentially.
+
+**Result:**
+
+| Method | Source Recall@3 | Faithfulness | Avg Latency | Total Cost |
+|---|---|---|---|---|
+| **Dense-only** | **88.9%** | 96.8% | 5.58s | $0.0065 |
+| Hybrid (RRF) | 84.7% | 95.0% | 7.81s | $0.0065 |
+| BM25-only | 31.9% | 37.8% | 4.14s | $0.0028 |
+
+**Honest read of this result, not spun toward the expected answer:**
+- Dense-only is the clear winner on this dataset. BM25 alone trails
+  miserably (31.9%), a real, meaningful gap.
+- Hybrid did **not** outperform Dense-only on this dataset — it
+  actually performed 4 points *worse*. This is reported as-is rather
+  than framed as an unambiguous win for Hybrid, since it wasn't one here.
+- **Why did Hybrid fail?** BM25's performance was so poor (likely due
+  to semantic mismatch between questions and PDF-extracted text) that
+  fusing its rankings with Dense via RRF introduced significant noise,
+  pushing correct Dense matches down in the final top-3. 
+- This is exactly why EvalOS was built: to prove empirically what works,
+  not to assume "Hybrid is always better."
 
 ---
 
