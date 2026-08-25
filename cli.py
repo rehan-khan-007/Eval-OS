@@ -1,10 +1,12 @@
 import asyncio
 import json
 import typer
+import os
 from database import init_db, AsyncSessionLocal, engine
 from models import Dataset, DatasetVersion, EvaluationExample, SystemConfig, Base
 from evaluators.deterministic import ToolSelectionEvaluator, SourceRecallEvaluator, LatencyEvaluator
 from adapters.mock_adapter import MockSystemAdapter
+from adapters.openrouter_adapter import OpenRouterAdapter
 from run_engine import RunEngine
 from sqlalchemy import select
 
@@ -12,7 +14,6 @@ app = typer.Typer()
 
 @app.command()
 def init_db_cli():
-    """Drops and creates all tables in the database."""
     async def run():
         typer.echo("Dropping old tables...")
         async with engine.begin() as conn:
@@ -24,7 +25,6 @@ def init_db_cli():
 
 @app.command()
 def ingest_dataset(file_path: str = typer.Argument(..., help="Path to the JSON dataset file")):
-    """Ingests a dataset from a JSON file."""
     async def run():
         with open(file_path, 'r') as f:
             data = json.load(f)
@@ -65,9 +65,10 @@ def ingest_dataset(file_path: str = typer.Argument(..., help="Path to the JSON d
 @app.command()
 def run_eval(
     dataset_version_id: str = typer.Option(..., "--dataset-version"),
-    config_name: str = typer.Option("MockAgentRAG", "--config-name")
+    config_name: str = typer.Option("OpenRouterAgent", "--config-name"),
+    system: str = typer.Option("openrouter", "--system", help="mock or openrouter"),
+    model: str = typer.Option("openai/gpt-4o-mini", "--model")
 ):
-    """Runs the evaluation engine against a dataset version."""
     async def run():
         async with AsyncSessionLocal() as db:
             stmt = select(EvaluationExample).where(EvaluationExample.dataset_version_id == dataset_version_id)
@@ -86,7 +87,6 @@ def run_eval(
 
             sys_config_id = f"cfg-{config_name.lower().replace(' ', '-')}"
             
-            # Check if the SystemConfig already exists to avoid UniqueViolationError
             config_stmt = select(SystemConfig).where(SystemConfig.id == sys_config_id)
             config_result = await db.execute(config_stmt)
             sys_config = config_result.scalars().first()
@@ -95,7 +95,7 @@ def run_eval(
                 sys_config = SystemConfig(
                     id=sys_config_id,
                     config_name=config_name,
-                    model="mock-model",
+                    model=model,
                     prompt_version="v1"
                 )
                 db.add(sys_config)
@@ -103,9 +103,16 @@ def run_eval(
             else:
                 typer.echo(f"Reusing existing SystemConfig: {sys_config_id}")
 
-            adapter = MockSystemAdapter()
+            if system == "mock":
+                adapter = MockSystemAdapter()
+                typer.echo("Using MockSystemAdapter.")
+            elif system == "openrouter":
+                adapter = OpenRouterAdapter(model=model)
+                typer.echo(f"Using OpenRouterAdapter with model: {model}")
+            else:
+                typer.echo("Invalid system. Choose 'mock' or 'openrouter'.")
+                return
             
-            # Auto-select evaluators based on the dataset's metadata
             evaluators = [LatencyEvaluator()]
             if examples[0]["metadata"].get("expected_tool"):
                 evaluators.append(ToolSelectionEvaluator())
