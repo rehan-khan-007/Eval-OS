@@ -52,7 +52,7 @@ Instead of just seeing a score, see *why* it failed.
 ### 4. Check for Regressions (CI/CD)
 Compare a new run against a baseline. Fails if recall drops by >2%.
 `python cli.py regression-check run-baseline-id run-new-id --threshold 0.02`
-# VERDICT: REGRESSION DETECTED. The new run is significantly worse.
+### VERDICT: REGRESSION DETECTED. The new run is significantly worse.
 
 ---
 
@@ -65,7 +65,9 @@ EvalOS is asynchronous by design, ensuring hundreds of concurrent API calls don'
 *   **Caching:** Upstash Redis (prefixed with `evalos:`) for zero-cost iterative testing.
 *   **Statistics:** `scikit-learn` and `numpy` for Bootstrap CIs and Cohen's Kappa.
 
+```markdown
 ### Project Structure
+```
 
 ```text
 Eval-OS/
