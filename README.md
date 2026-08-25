@@ -65,9 +65,8 @@ EvalOS is asynchronous by design, ensuring hundreds of concurrent API calls don'
 *   **Caching:** Upstash Redis (prefixed with `evalos:`) for zero-cost iterative testing.
 *   **Statistics:** `scikit-learn` and `numpy` for Bootstrap CIs and Cohen's Kappa.
 
-```markdown
-### Project Structure
-```
+
+### 📁 Project Structure
 
 ```text
 Eval-OS/
@@ -81,46 +80,6 @@ Eval-OS/
 
 ```
 
----
-
-## 📊 Real Benchmarks & Engineering Logs
-
-We don't just claim EvalOS works; we use it to generate real, documented results.
-
-*   📄 **[Executive Benchmark Summary](BENCHMARKS.md)** - The "At a glance" table and links to deep dives.
-*   🔬 **[Deep Dive: 5-Model RAG Benchmark](docs/benchmarks/01_model_comparison.md)** - Proves gpt-4o-mini beats gpt-4o in faithfulness while being 17x cheaper.
-*   🐛 **[Engineering Log](EVALOS_ENGINEERING_LOG.md)** - An honest record of the architecture decisions, async bugs found, and fixes applied during development.
-
----
-
-## 💡 Why EvalOS?
-
-> *"EvalOS was built to determine whether an AI system actually works, how well it works, why it fails, and what quality/cost/latency trade-offs it makes. Every reported number comes from an actual benchmark."*
-
----
-
-
-## 🏗️ Architecture & Tech Stack
-
-EvalOS is asynchronous by design, ensuring hundreds of concurrent API calls don't bottleneck.
-
-*   **Database:** Neon Postgres (via `asyncpg` + `SQLAlchemy 2.0`). Used for relational data AND vector storage (`pgvector`) AND BM25 full-text search (`tsvector`).
-*   **LLM Routing:** OpenRouter (via `AsyncOpenAI`).
-*   **Caching:** Upstash Redis (prefixed with `evalos:`) for zero-cost iterative testing.
-*   **Statistics:** `scikit-learn` and `numpy` for Bootstrap CIs and Cohen's Kappa.
-
-### Project Structure
-```text
-Eval-OS/
-├── cli/                  # Modular Typer commands (run, inspect, compare, label)
-├── adapters/             # System interfaces (OpenRouter, RAG, Mock)
-├── evaluators/           # Deterministic (Recall, Abstention) & LLM-Judge
-├── retrieval.py          # Dense, BM25, and Hybrid (RRF) search engines
-├── analysis_engine.py    # Aggregation, Slicing, A/B, and Regression logic
-├── cache.py              # Upstash Redis caching layer
-└── docs/benchmarks/      # Real, documented benchmark results
-
-```
 ---
 
 ## 📊 Real Benchmarks & Engineering Logs
