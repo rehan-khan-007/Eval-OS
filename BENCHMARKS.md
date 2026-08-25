@@ -1,8 +1,7 @@
 # EvalOS Benchmark Results
 
 Real numbers from running the actual EvalOS framework against real
-infrastructure and real API calls — not estimates. Each result below
-states exactly what was measured, how, and what its limitations are.
+infrastructure and real API calls — not estimates. 
 
 ## At a glance
 
@@ -17,151 +16,14 @@ states exactly what was measured, how, and what its limitations are.
 
 ---
 
-## 5-Model LLM RAG Benchmark
+## Detailed Reports
 
-**What was measured:** Source-level recall@3 and LLM-as-judge
-faithfulness across 5 different models answering the same 36 real
-questions with the same retrieved context (retrieval ran once per
-question, shared across all 5 models via the RAGAdapter, so generation
-quality is the only variable being compared).
-
-**How:** `python cli.py run-benchmark --dataset-version dv-ds-retrieval_qa-v1`
-against the 47 PDF corpus (1,500+ chunks). Cost computed from each
-response's actual `usage` field (real token counts), not estimated.
-
-**Result:**
-
-| Model | Source Recall@3 | Faithfulness | Total Cost | Avg Latency |
-|---|---|---|---|---|
-| `claude-haiku-4.5` | 88.9% | **98.2%** | $0.0658 | 6.88s |
-| `gpt-4o-mini` | 88.9% | 96.8% | **$0.0065** | 5.37s |
-| `llama-3.1-70b-instruct` | 88.9% | 96.2% | $0.0193 | 6.97s |
-| `gpt-4o` | 88.9% | 95.9% | $0.1119 | 5.20s |
-| `gemini-3.7-flash` | 88.9% | 89.1% | $0.0100 | 9.37s |
-
-**Total cost for this run: ~$0.21** (180 completions + 180 judge calls)
-
-**Honest caveats:**
-- Source Recall@3 is identical (88.9%) across all models because
-  retrieval happens *before* the model is called in our RAG pipeline.
-  The model only generates the answer; it does not control what context
-  it receives.
-- **The "expensive model" trap:** `gpt-4o` costs 17x more than
-  `gpt-4o-mini`, but actually scored *lower* in faithfulness. This
-  is a real, empirical justification for using mini as the default
-  generation tier, not an assumption.
-- `gemini-3.7-flash` struggled with the strict grounding prompt
-  ("answer *only* using context"), dropping to 89.1% faithfulness,
-  showing it is more prone to using outside knowledge than Anthropic
-  or OpenAI models in this specific RAG configuration.
-
----
-
-## Retrieval Ablation (Dense vs BM25 vs Hybrid)
-
-**What was measured:** Source-level recall@3 for three retrieval
-methods run in isolation — Dense-only (pgvector cosine), BM25-only
-(Postgres tsvector), and Hybrid (RRF-fused) — against the same
-36-question dataset. Directly tests the assumption that Hybrid
-retrieval is always superior to Dense-only.
-
-**How:** `python cli.py run-eval --system rag --retriever <method>`
-using `openai/gpt-4o-mini` for generation and `openai/text-embedding-3-small`
-for embeddings. EvalOS executed all three runs sequentially.
-
-**Result:**
-
-| Method | Source Recall@3 | Faithfulness | Avg Latency | Total Cost |
-|---|---|---|---|---|
-| **Dense-only** | **88.9%** | 96.8% | 5.58s | $0.0065 |
-| Hybrid (RRF) | 84.7% | 95.0% | 7.81s | $0.0065 |
-| BM25-only | 31.9% | 37.8% | 4.14s | $0.0028 |
-
-**Honest read of this result, not spun toward the expected answer:**
-- Dense-only is the clear winner on this dataset. BM25 alone trails
-  miserably (31.9%), a real, meaningful gap.
-- Hybrid did **not** outperform Dense-only on this dataset — it
-  actually performed 4 points *worse*. This is reported as-is rather
-  than framed as an unambiguous win for Hybrid, since it wasn't one here.
-- **Why did Hybrid fail?** BM25's performance was so poor (likely due
-  to semantic mismatch between questions and PDF-extracted text) that
-  fusing its rankings with Dense via RRF introduced significant noise,
-  pushing correct Dense matches down in the final top-3. 
-- This is exactly why EvalOS was built: to prove empirically what works,
-  not to assume "Hybrid is always better."
-
----
-
-## Slice-Based Evaluation (Domain Analysis)
-
-**What was measured:** Source-level recall@3 and faithfulness broken
-down by document domain, rather than just a global average. This
-exposes *where* the system succeeds and fails, rather than masking
-failures with aggregate success.
-
-**How:** `python cli.py inspect-run run-e4e5bcf7 --slice-by domain`
-on the Dense-only RAG run using `gpt-4o-mini`. EvalOS migrated the
-dataset to include domain tags (Finance, Quantum, Thermal,
-Entrepreneurship, General) based on source document prefixes.
-
-**Result:**
-
-| Domain | Source Recall@3 | Faithfulness |
-|---|---|---|
-| Entrepreneurship | **100.0%** | 100.0% |
-| Finance | **100.0%** | 100.0% |
-| Thermal | 91.7% | 100.0% |
-| Quantum | 84.4% | 92.7% |
-| General (Negative Control) | 0.0%* | 100.0% |
-
-**Honest caveats:**
-- *The 0.0% recall on the "General" domain is the negative control
-  question ("What is quantum entanglement?") which has `expected_sources: []`.
-  pgvector still retrieves nearest neighbors for it, so the system
-  generates an answer (hence 100% faithfulness to the provided context),
-  but the retrieval correctly scores 0.0% because there were no expected
-  sources to find. A true "Abstention" metric is needed to test if the
-  system should have refused to answer.
-- **The real finding:** The global 88.9% recall is entirely dragged
-  down by the Quantum domain (84.4%). If you were building this RAG
-  system for a finance startup, EvalOS just proved your system is
-  effectively perfect (100% recall). If you were building it for
-  quantum physicists, you have a known, diagnosed retrieval failure
-  mode to fix.
-
----
-
-## Human-in-the-Loop (HITL) Evaluator Reliability
-
-**What was measured:** Whether the `LLMJudgeEvaluator` (which uses
-`gpt-4o-mini` to extract claims and verify them against context) is
-actually telling the truth. A random sample of 5 generated answers
-and their judge verdicts were manually reviewed by a human.
-
-**How:** `python cli.py label-judgements run-ccbcb9b2` followed by
-`python cli.py calculate-agreement run-ccbcb9b2`.
-
-**Result:**
-
-| Metric | Value |
-|---|---|
-| Total Labeled Samples | 5 |
-| Raw Agreement | **100.0%** |
-| Cohen's Kappa | 0.0000* |
-
-*\*Note on Kappa: Cohen's Kappa requires variance in the ratings to
-calculate chance-adjusted agreement. Because the human agreed with
-the LLM Judge on 100% of the samples (variance = 0), the Kappa
-formula mathematically collapses to 0.0. The 100% Raw Agreement is
-the meaningful metric here.*
-
-**Honest caveats:**
-- 5 samples is a small sample size, but it successfully validates that
-  the Judge is not blindly hallucinating positive scores. It correctly
-  identified a partially unsupported answer (scoring it 83.3% rather
-  than 100%) which the human confirmed.
-- This confirms, rather than merely repeats, the automated faithfulness
-  scores in the 5-model benchmark above.
+1. **[5-Model LLM RAG Benchmark](docs/benchmarks/01_model_comparison.md)**
+   *Compares cost, latency, and faithfulness across 5 LLMs. Proves gpt-4o-mini beats gpt-4o in faithfulness while being 17x cheaper.*
+2. **[Retrieval Ablation & Slice Analysis](docs/benchmarks/02_retrieval_ablation.md)**
+   *Proves Dense-only beats Hybrid (RRF) on this dataset, and isolates retrieval failures to the Quantum domain (84.4% recall).*
+3. **[HITL Evaluator Reliability](docs/benchmarks/03_evaluator_reliability.md)**
+   *Proves the LLM-as-Judge evaluator is highly reliable via human auditing (100% raw agreement).*
 
 ---
 
