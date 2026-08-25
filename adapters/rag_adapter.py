@@ -2,36 +2,27 @@ import os
 import time
 from openai import AsyncOpenAI
 from adapters.base import BaseSystemAdapter
-from database import AsyncSessionLocal
-from models import DocumentChunk
-from sqlalchemy import select
+from retrieval import RetrievalEngine
 
 class RAGAdapter(BaseSystemAdapter):
-    def __init__(self, model: str = "openai/gpt-4o-mini"):
+    def __init__(self, model: str = "openai/gpt-4o-mini", retriever_type: str = "hybrid"):
         self.client = AsyncOpenAI(
             api_key=os.getenv("OPENROUTER_API_KEY"),
             base_url="https://openrouter.ai/api/v1"
         )
         self.model = model
-        self.embedding_model = "openai/text-embedding-3-small"
+        self.retrieval_engine = RetrievalEngine()
+        self.retriever_type = retriever_type
 
     async def retrieve(self, query: str, top_k: int = 3) -> list[dict]:
-        response = await self.client.embeddings.create(
-            model=self.embedding_model,
-            input=query
-        )
-        query_embedding = response.data[0].embedding
-
-        async with AsyncSessionLocal() as db:
-            stmt = (
-                select(DocumentChunk)
-                .order_by(DocumentChunk.embedding.cosine_distance(query_embedding))
-                .limit(top_k)
-            )
-            result = await db.execute(stmt)
-            chunks = result.scalars().all()
-            
-            return [{"source": c.source, "text": c.text} for c in chunks]
+        if self.retriever_type == "dense":
+            return await self.retrieval_engine.dense_search(query, top_k)
+        elif self.retriever_type == "bm25":
+            return await self.retrieval_engine.bm25_search(query, top_k)
+        elif self.retriever_type == "hybrid":
+            return await self.retrieval_engine.hybrid_search(query, top_k)
+        else:
+            raise ValueError(f"Unknown retriever type: {self.retriever_type}")
 
     async def generate(self, input_data: dict) -> dict:
         question = input_data.get("question")
