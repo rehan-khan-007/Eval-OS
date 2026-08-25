@@ -9,6 +9,7 @@ from adapters.mock_adapter import MockSystemAdapter
 from adapters.openrouter_adapter import OpenRouterAdapter
 from adapters.rag_adapter import RAGAdapter
 from run_engine import RunEngine
+from analysis_engine import AnalysisEngine
 from sqlalchemy import select
 
 app = typer.Typer()
@@ -131,6 +132,37 @@ def run_eval(
             typer.echo("Starting evaluation run...")
             run_id = await engine.execute_run(dataset_version_id, examples)
             typer.echo(f"Evaluation complete. Run ID: {run_id}")
+    asyncio.run(run())
+
+@app.command()
+def inspect_run(run_id: str = typer.Argument(..., help="The Run ID to inspect")):
+    """Analyzes a specific run and prints the aggregated metrics."""
+    async def run():
+        data = await AnalysisEngine.analyze_run(run_id)
+        if not data:
+            typer.echo("Run not found.")
+            return
+            
+        typer.echo("=" * 50)
+        typer.echo(f"Run ID: {data['run_id']}")
+        typer.echo(f"Status: {data['status']}")
+        typer.echo(f"Config: {data['config_name']} ({data['model']})")
+        typer.echo("=" * 50)
+        typer.echo(f"Examples: {data['total_examples']} (Successes: {data['successes']}, Failures: {data['failures']})")
+        typer.echo(f"Total Cost: ${data['total_cost']:.6f}")
+        typer.echo("=" * 50)
+        typer.echo("Latency (ms):")
+        typer.echo(f"  Min: {data['latency_ms']['min']:.2f}")
+        typer.echo(f"  Max: {data['latency_ms']['max']:.2f}")
+        typer.echo(f"  Avg: {data['latency_ms']['avg']:.2f}")
+        typer.echo("=" * 50)
+        typer.echo("Metrics:")
+        for name, score in data['metrics'].items():
+            if "accuracy" in name or "recall" in name:
+                typer.echo(f"  {name}: {score*100:.1f}%")
+            else:
+                typer.echo(f"  {name}: {score:.4f}")
+        typer.echo("=" * 50)
     asyncio.run(run())
 
 if __name__ == "__main__":
