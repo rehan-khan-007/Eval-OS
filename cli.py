@@ -7,6 +7,7 @@ from models import Dataset, DatasetVersion, EvaluationExample, SystemConfig, Bas
 from evaluators.deterministic import ToolSelectionEvaluator, SourceRecallEvaluator, LatencyEvaluator
 from adapters.mock_adapter import MockSystemAdapter
 from adapters.openrouter_adapter import OpenRouterAdapter
+from adapters.rag_adapter import RAGAdapter
 from run_engine import RunEngine
 from sqlalchemy import select
 
@@ -15,10 +16,7 @@ app = typer.Typer()
 @app.command()
 def init_db_cli():
     async def run():
-        typer.echo("Dropping old tables...")
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-        typer.echo("Creating tables...")
+        typer.echo("Creating tables (if not exist) and ensuring pgvector extension...")
         await init_db()
         typer.echo("Database initialized.")
     asyncio.run(run())
@@ -33,9 +31,14 @@ def ingest_dataset(file_path: str = typer.Argument(..., help="Path to the JSON d
             ds_id = f"ds-{file_path.split('/')[-1].split('.')[0]}"
             dv_id = f"dv-{ds_id}-v1"
             
+            stmt = select(DatasetVersion).where(DatasetVersion.id == dv_id)
+            result = await db.execute(stmt)
+            if result.scalars().first():
+                typer.echo(f"Dataset version {dv_id} already exists. Skipping.")
+                return
+            
             ds = Dataset(id=ds_id, name=f"Dataset from {file_path}")
             db.add(ds)
-            
             dv = DatasetVersion(id=dv_id, dataset_id=ds_id, version_tag="v1", commit_hash="n/a")
             db.add(dv)
             
@@ -66,7 +69,7 @@ def ingest_dataset(file_path: str = typer.Argument(..., help="Path to the JSON d
 def run_eval(
     dataset_version_id: str = typer.Option(..., "--dataset-version"),
     config_name: str = typer.Option("OpenRouterAgent", "--config-name"),
-    system: str = typer.Option("openrouter", "--system", help="mock or openrouter"),
+    system: str = typer.Option("openrouter", "--system", help="mock, openrouter, or rag"),
     model: str = typer.Option("openai/gpt-4o-mini", "--model")
 ):
     async def run():
@@ -109,8 +112,11 @@ def run_eval(
             elif system == "openrouter":
                 adapter = OpenRouterAdapter(model=model)
                 typer.echo(f"Using OpenRouterAdapter with model: {model}")
+            elif system == "rag":
+                adapter = RAGAdapter(model=model)
+                typer.echo(f"Using RAGAdapter with model: {model}")
             else:
-                typer.echo("Invalid system. Choose 'mock' or 'openrouter'.")
+                typer.echo("Invalid system. Choose 'mock', 'openrouter', or 'rag'.")
                 return
             
             evaluators = [LatencyEvaluator()]
