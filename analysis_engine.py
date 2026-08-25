@@ -1,5 +1,5 @@
 from database import AsyncSessionLocal
-from models import EvaluationRun, Execution, MetricResult, SystemConfig, DatasetVersion
+from models import EvaluationRun, Execution, MetricResult, SystemConfig, DatasetVersion, EvaluationExample
 from sqlalchemy import select
 from collections import defaultdict
 
@@ -50,3 +50,42 @@ class AnalysisEngine:
                 },
                 "metrics": aggregated_metrics
             }
+
+    @staticmethod
+    async def analyze_run_slices(run_id: str, slice_field: str) -> dict:
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                select(Execution, MetricResult, EvaluationExample)
+                .join(MetricResult, Execution.id == MetricResult.execution_id)
+                .join(EvaluationExample, Execution.example_id == EvaluationExample.id)
+                .where(Execution.run_id == run_id)
+            )
+            result = await db.execute(stmt)
+            rows = result.all()
+            
+            if not rows:
+                return None
+                
+            slices = defaultdict(lambda: defaultdict(list))
+            
+            for exec, metric, example in rows:
+                if metric.evaluator_name == "latency_ms":
+                    continue
+                    
+                if slice_field == "domain":
+                    slice_key = example.domain if example.domain else "unknown"
+                elif slice_field == "task_type":
+                    slice_key = example.task_type if example.task_type else "unknown"
+                else:
+                    slice_key = "unknown"
+                    
+                slices[slice_key][metric.evaluator_name].append(metric.score)
+                
+            aggregated_slices = {}
+            for slice_name, metrics in slices.items():
+                agg_metrics = {}
+                for m_name, scores in metrics.items():
+                    agg_metrics[m_name] = sum(scores) / len(scores) if scores else 0.0
+                aggregated_slices[slice_name] = agg_metrics
+                
+            return aggregated_slices

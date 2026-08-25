@@ -5,9 +5,31 @@ from models import Execution
 from analysis_engine import AnalysisEngine
 from sqlalchemy import select
 
-def inspect_run(run_id: str = typer.Argument(..., help="The Run ID to inspect")):
+def inspect_run(
+    run_id: str = typer.Argument(..., help="The Run ID to inspect"),
+    slice_by: str = typer.Option(None, "--slice-by", help="Slice metrics by 'domain' or 'task_type'")
+):
     """Analyzes a specific run and prints the aggregated metrics."""
     async def run():
+        if slice_by:
+            data = await AnalysisEngine.analyze_run_slices(run_id, slice_by)
+            if not data:
+                typer.echo("Run not found or no data.")
+                return
+                
+            typer.echo("=" * 50)
+            typer.echo(f"Slice Analysis for Run {run_id} by {slice_by}")
+            typer.echo("=" * 50)
+            for slice_name, metrics in data.items():
+                typer.echo(f"\n--- {slice_name} ---")
+                for m_name, score in metrics.items():
+                    if "recall" in m_name or "faithfulness" in m_name or "accuracy" in m_name:
+                        typer.echo(f"  {m_name}: {score*100:.1f}%")
+                    else:
+                        typer.echo(f"  {m_name}: {score:.4f}")
+            typer.echo("=" * 50)
+            return
+
         data = await AnalysisEngine.analyze_run(run_id)
         if not data:
             typer.echo("Run not found.")
