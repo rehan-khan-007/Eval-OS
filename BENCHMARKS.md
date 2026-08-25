@@ -30,6 +30,8 @@ infrastructure and real API calls — not estimates.
    *Proves the system abstains correctly when retrieval fails, rather than hallucinating (80.6% abstention accuracy, 96.8% faithfulness).*
 6. **[Evaluation Caching & Cost Efficiency](docs/benchmarks/06_caching_efficiency.md)**
    *Proves iterative benchmarking is free: a cached re-run of the 36-question dataset costs $0.00 and finishes in seconds.*
+7. **[Failure Diagnosis Taxonomy](docs/benchmarks/07_failure_diagnosis.md)**
+   *Classifies failures into Retrieval, Generation, and System errors. Diagnoses an "overly cautious LLM" bug where the model abstains despite having the correct context.*
 
 ---
 

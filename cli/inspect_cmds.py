@@ -76,3 +76,44 @@ def inspect_failures(run_id: str = typer.Argument(..., help="The Run ID to inspe
                 typer.echo(f"Question ID: {fail.example_id}")
                 typer.echo("=" * 50)
     asyncio.run(run())
+
+def diagnose_run(run_id: str = typer.Argument(..., help="The Run ID to diagnose")):
+    """Classifies failures into a taxonomy (Retrieval, Generation, System)."""
+    async def run():
+        data = await AnalysisEngine.diagnose_run(run_id)
+        if not data:
+            typer.echo("Run not found or no data.")
+            return
+            
+        typer.echo("=" * 50)
+        typer.echo(f"Failure Diagnosis for Run {run_id}")
+        typer.echo("=" * 50)
+        
+        typer.echo(f"\n[1] Full Successes ({len(data['full_success'])}):")
+        for item in data['full_success'][:3]:
+            typer.echo(f"  - {item['question']}")
+        if len(data['full_success']) > 3:
+            typer.echo(f"  ... and {len(data['full_success']) - 3} more")
+            
+        typer.echo(f"\n[2] Retrieval Failures ({len(data['retrieval_failure'])}):")
+        for item in data['retrieval_failure']:
+            typer.echo(f"  - {item['question']} (Recall: {item['recall']*100:.1f}%)")
+            
+        typer.echo(f"\n[3] Generation Failures ({len(data['generation_failure'])}):")
+        for item in data['generation_failure']:
+            typer.echo(f"  - {item['question']} (Faithfulness: {item['faithfulness']*100:.1f}%)")
+            
+        typer.echo(f"\n[4] System Failures ({len(data['system_failure'])}):")
+        for item in data['system_failure']:
+            typer.echo(f"  - {item['question']}")
+            
+        typer.echo(f"\n[5] Negative Control - Passed ({len(data['negative_control_pass'])}):")
+        for item in data['negative_control_pass']:
+            typer.echo(f"  - {item['question']}")
+            
+        typer.echo(f"\n[6] Negative Control - Failed ({len(data['negative_control_fail'])}):")
+        for item in data['negative_control_fail']:
+            typer.echo(f"  - {item['question']} (Should have abstained but answered)")
+            
+        typer.echo("=" * 50)
+    asyncio.run(run())
