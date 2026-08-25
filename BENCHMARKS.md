@@ -24,6 +24,8 @@ infrastructure and real API calls — not estimates.
    *Proves Dense-only beats Hybrid (RRF) on this dataset, and isolates retrieval failures to the Quantum domain (84.4% recall).*
 3. **[HITL Evaluator Reliability](docs/benchmarks/03_evaluator_reliability.md)**
    *Proves the LLM-as-Judge evaluator is highly reliable via human auditing (100% raw agreement).*
+4. **[A/B Comparison: Dense vs Hybrid](docs/benchmarks/04_ab_comparison.md)**
+   *Proves the 4-point recall gap between Dense and Hybrid is NOT statistically significant at this sample size.*
 
 ---
 
