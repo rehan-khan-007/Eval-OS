@@ -16,14 +16,12 @@ class RAGAdapter(BaseSystemAdapter):
         self.embedding_model = "openai/text-embedding-3-small"
 
     async def retrieve(self, query: str, top_k: int = 3) -> list[dict]:
-        # 1. Embed the query
         response = await self.client.embeddings.create(
             model=self.embedding_model,
             input=query
         )
         query_embedding = response.data[0].embedding
 
-        # 2. Query Postgres for top_k chunks using cosine distance
         async with AsyncSessionLocal() as db:
             stmt = (
                 select(DocumentChunk)
@@ -40,11 +38,9 @@ class RAGAdapter(BaseSystemAdapter):
         start_time = time.time()
         
         try:
-            # 1. Retrieve context
             retrieved_evidence = await self.retrieve(question, top_k=3)
             context_text = "\n\n".join([f"Source: {c['source']}\nContent: {c['text']}" for c in retrieved_evidence])
             
-            # 2. Generate answer
             system_prompt = "Answer the user's question using only the provided context. If the context doesn't contain the answer, say so plainly."
             user_prompt = f"Context:\n{context_text}\n\nQuestion: {question}"
             messages = [
@@ -70,6 +66,12 @@ class RAGAdapter(BaseSystemAdapter):
                     cost = (tokens_in * 0.15 + tokens_out * 0.60) / 1_000_000
                 elif "gpt-4o" in self.model:
                     cost = (tokens_in * 2.50 + tokens_out * 10.00) / 1_000_000
+                elif "gemini" in self.model and "flash" in self.model:
+                    cost = (tokens_in * 0.075 + tokens_out * 0.30) / 1_000_000
+                elif "claude" in self.model and "haiku" in self.model:
+                    cost = (tokens_in * 0.80 + tokens_out * 4.00) / 1_000_000
+                elif "llama-3.1-70b" in self.model:
+                    cost = (tokens_in * 0.55 + tokens_out * 0.75) / 1_000_000
 
             return {
                 "answer": choice.content or "",

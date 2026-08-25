@@ -7,8 +7,9 @@ class BaseEvaluator(ABC):
         self.version = version
 
     @abstractmethod
-    def evaluate(self, input_data: Any, system_output: dict, retrieved_evidence: list) -> dict:
+    async def evaluate(self, input_data: Any, system_output: dict, retrieved_evidence: list) -> dict:
         """
+        Evaluates the system output asynchronously.
         Returns a dict containing:
         {
             "score": float,
