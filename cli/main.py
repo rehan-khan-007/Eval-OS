@@ -4,6 +4,7 @@ from cli.run_cmds import run_eval, run_benchmark
 from cli.inspect_cmds import inspect_run, inspect_failures, diagnose_run
 from cli.label_cmds import label_judgements, calculate_agreement
 from cli.compare_cmds import compare_runs
+from cli.regression_cmds import regression_check
 
 app = typer.Typer()
 
@@ -17,6 +18,7 @@ app.command()(label_judgements)
 app.command()(calculate_agreement)
 app.command()(compare_runs)
 app.command()(diagnose_run)
+app.command()(regression_check)
 
 if __name__ == "__main__":
     app()

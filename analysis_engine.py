@@ -170,7 +170,6 @@ class AnalysisEngine:
             if not rows:
                 return None
                 
-            # Group metrics by execution_id
             exec_data = defaultdict(lambda: {"metrics": {}, "example": None, "exec": None})
             for exec, metric, example in rows:
                 exec_data[exec.id]["metrics"][metric.evaluator_name] = metric.score
@@ -205,23 +204,54 @@ class AnalysisEngine:
                     "abstention": abstention
                 }
                 
-                # 1. System Failure
                 if exec.status != "success":
                     taxonomy["system_failure"].append(entry)
-                # 2. Negative Control
                 elif len(expected_sources) == 0:
                     if abstention == 1.0:
                         taxonomy["negative_control_pass"].append(entry)
                     else:
                         taxonomy["negative_control_fail"].append(entry)
-                # 3. Retrieval Failure
                 elif recall == 0.0:
                     taxonomy["retrieval_failure"].append(entry)
-                # 4. Generation Failure
                 elif faithfulness < 0.8 or abstention == 0.0:
                     taxonomy["generation_failure"].append(entry)
-                # 5. Full Success
                 else:
                     taxonomy["full_success"].append(entry)
                     
             return taxonomy
+
+    @staticmethod
+    async def check_regression(baseline_run_id: str, new_run_id: str, threshold: float = 0.02) -> dict:
+        baseline_data = await AnalysisEngine.analyze_run(baseline_run_id)
+        new_data = await AnalysisEngine.analyze_run(new_run_id)
+        
+        if not baseline_data or not new_data:
+            return None
+            
+        regressions = []
+        improvements = []
+        
+        # Compare all common metrics
+        all_metrics = set(baseline_data["metrics"].keys()).union(set(new_data["metrics"].keys()))
+        
+        for metric in all_metrics:
+            b_score = baseline_data["metrics"].get(metric, 0.0)
+            n_score = new_data["metrics"].get(metric, 0.0)
+            diff = n_score - b_score
+            
+            # For latency, lower is better. For everything else, higher is better.
+            if metric == "latency_ms":
+                diff = b_score - n_score # Invert so positive diff means improvement (faster)
+                
+            if diff < -threshold:
+                regressions.append({"metric": metric, "baseline": b_score, "new": n_score, "diff": diff})
+            elif diff > threshold:
+                improvements.append({"metric": metric, "baseline": b_score, "new": n_score, "diff": diff})
+                
+        return {
+            "baseline_run": baseline_run_id,
+            "new_run": new_run_id,
+            "regressions": regressions,
+            "improvements": improvements,
+            "is_regression": len(regressions) > 0
+        }

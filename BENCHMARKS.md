@@ -32,6 +32,8 @@ infrastructure and real API calls — not estimates.
    *Proves iterative benchmarking is free: a cached re-run of the 36-question dataset costs $0.00 and finishes in seconds.*
 7. **[Failure Diagnosis Taxonomy](docs/benchmarks/07_failure_diagnosis.md)**
    *Classifies failures into Retrieval, Generation, and System errors. Diagnoses an "overly cautious LLM" bug where the model abstains despite having the correct context.*
+8. **[Regression Testing](docs/benchmarks/08_regression_testing.md)**
+   *Proves EvalOS can act as a CI/CD gate, detecting a 4.2% recall regression when switching from Dense to Hybrid retrieval.*
 
 ---
 
