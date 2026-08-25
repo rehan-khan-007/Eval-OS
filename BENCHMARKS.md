@@ -92,6 +92,45 @@ for embeddings. EvalOS executed all three runs sequentially.
 
 ---
 
+## Slice-Based Evaluation (Domain Analysis)
+
+**What was measured:** Source-level recall@3 and faithfulness broken
+down by document domain, rather than just a global average. This
+exposes *where* the system succeeds and fails, rather than masking
+failures with aggregate success.
+
+**How:** `python cli.py inspect-run run-e4e5bcf7 --slice-by domain`
+on the Dense-only RAG run using `gpt-4o-mini`. EvalOS migrated the
+dataset to include domain tags (Finance, Quantum, Thermal,
+Entrepreneurship, General) based on source document prefixes.
+
+**Result:**
+
+| Domain | Source Recall@3 | Faithfulness |
+|---|---|---|
+| Entrepreneurship | **100.0%** | 100.0% |
+| Finance | **100.0%** | 100.0% |
+| Thermal | 91.7% | 100.0% |
+| Quantum | 84.4% | 92.7% |
+| General (Negative Control) | 0.0%* | 100.0% |
+
+**Honest caveats:**
+- *The 0.0% recall on the "General" domain is the negative control
+  question ("What is quantum entanglement?") which has `expected_sources: []`.
+  pgvector still retrieves nearest neighbors for it, so the system
+  generates an answer (hence 100% faithfulness to the provided context),
+  but the retrieval correctly scores 0.0% because there were no expected
+  sources to find. A true "Abstention" metric is needed to test if the
+  system should have refused to answer.
+- **The real finding:** The global 88.9% recall is entirely dragged
+  down by the Quantum domain (84.4%). If you were building this RAG
+  system for a finance startup, EvalOS just proved your system is
+  effectively perfect (100% recall). If you were building it for
+  quantum physicists, you have a known, diagnosed retrieval failure
+  mode to fix.
+
+---
+
 ## Human-in-the-Loop (HITL) Evaluator Reliability
 
 **What was measured:** Whether the `LLMJudgeEvaluator` (which uses
