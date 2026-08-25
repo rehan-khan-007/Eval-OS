@@ -94,7 +94,6 @@ class AnalysisEngine:
     @staticmethod
     async def compare_runs(run_a_id: str, run_b_id: str, metric_name: str = "source_recall@3") -> dict:
         async with AsyncSessionLocal() as db:
-            # Fetch all metrics for Run A
             stmt_a = (
                 select(Execution, MetricResult)
                 .join(MetricResult, Execution.id == MetricResult.execution_id)
@@ -103,7 +102,6 @@ class AnalysisEngine:
             rows_a = (await db.execute(stmt_a)).all()
             scores_a = {exec.example_id: metric.score for exec, metric in rows_a}
 
-            # Fetch all metrics for Run B
             stmt_b = (
                 select(Execution, MetricResult)
                 .join(MetricResult, Execution.id == MetricResult.execution_id)
@@ -115,7 +113,6 @@ class AnalysisEngine:
             if not scores_a or not scores_b:
                 return None
 
-            # Compare per example
             a_wins = 0
             b_wins = 0
             ties = 0
@@ -136,7 +133,6 @@ class AnalysisEngine:
                 else:
                     ties += 1
 
-            # Bootstrap Confidence Interval (1000 iterations)
             diffs_array = np.array(diffs)
             n = len(diffs_array)
             boot_means = []
@@ -158,3 +154,74 @@ class AnalysisEngine:
                 "ci_upper": upper_bound,
                 "is_significant": not (lower_bound <= 0 <= upper_bound)
             }
+
+    @staticmethod
+    async def diagnose_run(run_id: str) -> dict:
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                select(Execution, MetricResult, EvaluationExample)
+                .join(MetricResult, Execution.id == MetricResult.execution_id)
+                .join(EvaluationExample, Execution.example_id == EvaluationExample.id)
+                .where(Execution.run_id == run_id)
+            )
+            result = await db.execute(stmt)
+            rows = result.all()
+            
+            if not rows:
+                return None
+                
+            # Group metrics by execution_id
+            exec_data = defaultdict(lambda: {"metrics": {}, "example": None, "exec": None})
+            for exec, metric, example in rows:
+                exec_data[exec.id]["metrics"][metric.evaluator_name] = metric.score
+                exec_data[exec.id]["example"] = example
+                exec_data[exec.id]["exec"] = exec
+                
+            taxonomy = {
+                "retrieval_failure": [],
+                "generation_failure": [],
+                "system_failure": [],
+                "negative_control_pass": [],
+                "negative_control_fail": [],
+                "full_success": []
+            }
+            
+            for exec_id, data in exec_data.items():
+                exec = data["exec"]
+                example = data["example"]
+                metrics = data["metrics"]
+                
+                question = example.question[:50] + "..." if len(example.question) > 50 else example.question
+                expected_sources = example.metadata_json.get("expected_sources", [])
+                recall = metrics.get("source_recall@3", 0.0)
+                faithfulness = metrics.get("faithfulness", 0.0)
+                abstention = metrics.get("abstention_accuracy", 1.0)
+                
+                entry = {
+                    "question": question,
+                    "example_id": example.id,
+                    "recall": recall,
+                    "faithfulness": faithfulness,
+                    "abstention": abstention
+                }
+                
+                # 1. System Failure
+                if exec.status != "success":
+                    taxonomy["system_failure"].append(entry)
+                # 2. Negative Control
+                elif len(expected_sources) == 0:
+                    if abstention == 1.0:
+                        taxonomy["negative_control_pass"].append(entry)
+                    else:
+                        taxonomy["negative_control_fail"].append(entry)
+                # 3. Retrieval Failure
+                elif recall == 0.0:
+                    taxonomy["retrieval_failure"].append(entry)
+                # 4. Generation Failure
+                elif faithfulness < 0.8 or abstention == 0.0:
+                    taxonomy["generation_failure"].append(entry)
+                # 5. Full Success
+                else:
+                    taxonomy["full_success"].append(entry)
+                    
+            return taxonomy
