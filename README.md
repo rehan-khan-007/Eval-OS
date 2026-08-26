@@ -10,10 +10,10 @@ EvalOS is a rigorous, CLI-first framework that runs reproducible benchmarks, mea
 
 ## 🧠 The EvalOS Philosophy
 
-EvalOS was built to prove empirically what works, not to assume "bigger is always better." Here are real findings EvalOS uncovered during its own development:
+EvalOS was built to prove empirically what works, not to assume "bigger is always better." Here are real findings EvalOS observed on its own benchmark:
 
-*   **The "Expensive Model" Trap:** EvalOS proved that `gpt-4o` costs **17x more** than `gpt-4o-mini`, but actually scored *lower* in faithfulness (hallucinated more) on the same RAG task.
-*   **The "Hybrid is Always Better" Myth:** EvalOS proved that Hybrid retrieval (BM25 + Dense + RRF) actually *regressed* recall by 4 points compared to Dense-only, because BM25 introduced noise on PDF-extracted text.
+*   **The "Expensive Model" Trap:** On this benchmark, `gpt-4o` cost ~15x more than `gpt-4o-mini`, but actually scored *lower* in faithfulness (hallucinated more) on the same RAG task.
+*   **The "Hybrid is Always Better" Myth:** EvalOS observed that Hybrid retrieval (Postgres FTS + Dense + RRF) actually *regressed* recall by 4 points compared to Dense-only, because FTS introduced noise on PDF-extracted text.
 *   **The "Overly Cautious LLM" Bug:** EvalOS diagnosed a failure mode where the LLM had the correct context but abstained unnecessarily, proving global accuracy scores hide real failure modes.
 
 ---
@@ -28,7 +28,7 @@ EvalOS was built to prove empirically what works, not to assume "bigger is alway
 | **Failure Diagnosis** | Automatic taxonomy classification: Did it fail because of *Retrieval*, *Generation*, or *System Error*? |
 | **Statistical Significance** | A/B comparison with 1000-iteration Bootstrap Confidence Intervals to prove differences aren't just noise. |
 | **Regression Testing** | Set a baseline run and block deployments if a new run regresses beyond a configurable threshold. |
-| **Zero-Cost Iteration** | Upstash Redis caching layer means re-running an evaluation on the same config costs $0.00 and finishes in seconds. |
+| **Cached Iteration** | Upstash Redis caching layer means re-running an evaluation on the same config eliminates duplicate LLM inference cost, finishing in seconds. |
 
 ---
 
@@ -46,39 +46,34 @@ Runs the dataset through 5 different LLMs, calculating real cost, latency, recal
 ### 3. Diagnose Failures
 Instead of just seeing a score, see *why* it failed.
 `python cli.py diagnose-run run-ccbcb9b2`
-#### [2] Retrieval Failures (2)
-#### [3] Generation Failures (6)
+# [2] Retrieval Failures (2)
+# [3] Generation Failures (6)
 
 ### 4. Check for Regressions (CI/CD)
 Compare a new run against a baseline. Fails if recall drops by >2%.
 `python cli.py regression-check run-baseline-id run-new-id --threshold 0.02`
-### VERDICT: REGRESSION DETECTED. The new run is significantly worse.
+# VERDICT: REGRESSION DETECTED. The new run is significantly worse.
 
 ---
 
 ## 🏗️ Architecture & Tech Stack
 
-EvalOS is asynchronous by design, ensuring hundreds of concurrent API calls don't bottleneck.
+EvalOS uses an asynchronous architecture to prevent I/O bottlenecks during evaluation pipelines.
 
-*   **Database:** Neon Postgres (via `asyncpg` + `SQLAlchemy 2.0`). Used for relational data AND vector storage (`pgvector`) AND BM25 full-text search (`tsvector`).
+*   **Database:** Neon Postgres (via `asyncpg` + `SQLAlchemy 2.0`). Used for relational data AND vector storage (`pgvector`) AND PostgreSQL full-text search (`tsvector`).
 *   **LLM Routing:** OpenRouter (via `AsyncOpenAI`).
-*   **Caching:** Upstash Redis (prefixed with `evalos:`) for zero-cost iterative testing.
+*   **Caching:** Upstash Redis (prefixed with `evalos:`) for cached iteration.
 *   **Statistics:** `scikit-learn` and `numpy` for Bootstrap CIs and Cohen's Kappa.
 
-
-### 📁 Project Structure
-
-```text
+### Project Structure
 Eval-OS/
 ├── cli/                  # Modular Typer commands (run, inspect, compare, label)
 ├── adapters/             # System interfaces (OpenRouter, RAG, Mock)
 ├── evaluators/           # Deterministic (Recall, Abstention) & LLM-Judge
-├── retrieval.py          # Dense, BM25, and Hybrid (RRF) search engines
-├── analysis_engine.py    # Aggregation, Slicing, A/B, and Regression logic
+├── retrieval.py          # Dense, PostgreSQL FTS, and Hybrid (RRF) search engines
+├── analysis/             # Aggregation, Slicing, A/B, and Regression logic
 ├── cache.py              # Upstash Redis caching layer
 └── docs/benchmarks/      # Real, documented benchmark results
-
-```
 
 ---
 
@@ -87,13 +82,11 @@ Eval-OS/
 We don't just claim EvalOS works; we use it to generate real, documented results.
 
 *   📄 **[Executive Benchmark Summary](BENCHMARKS.md)** - The "At a glance" table and links to deep dives.
-*   🔬 **[Deep Dive: 5-Model RAG Benchmark](docs/benchmarks/01_model_comparison.md)** - Proves gpt-4o-mini beats gpt-4o in faithfulness while being 17x cheaper.
-*   🐛 **[Engineering Log](EVALOS_ENGINEERING_LOG.md)** - An honest record of the architecture decisions, async bugs found, and fixes applied during development.
+*   🔬 **[Deep Dive: 5-Model RAG Benchmark](docs/benchmarks/01_model_comparison.md)** - Proves gpt-4o-mini beats gpt-4o in faithfulness while being 15x cheaper.
+*   🐛 **[Engineering Log Vol 1](EVALOS_ENGINEERING_LOG.md)** & **[Vol 2](EVALOS_ENGINEERING_LOG_VOL2.md)** - An honest record of the architecture decisions, async bugs found, and fixes applied during development.
 
 ---
 
 ## 💡 Why EvalOS?
 
 > *"EvalOS was built to determine whether an AI system actually works, how well it works, why it fails, and what quality/cost/latency trade-offs it makes. Every reported number comes from an actual benchmark."*
-
----
