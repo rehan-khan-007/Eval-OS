@@ -21,24 +21,46 @@ class ToolSelectionEvaluator(BaseEvaluator):
         }
 
 class SourceRecallEvaluator(BaseEvaluator):
-    """Measures source-level recall@k for RAG systems (ignores chunk indices)."""
+    """Measures source-level or chunk-level recall@k for RAG systems."""
     def __init__(self, k: int = 3):
-        super().__init__(name=f"source_recall@{k}", version="v1")
+        super().__init__(name=f"source_recall@{k}", version="v2") # Version bump for chunk-level logic
         self.k = k
 
     async def evaluate(self, input_data, system_output, retrieved_evidence):
-        expected_sources = set(input_data.get("metadata", {}).get("expected_sources", []))
-        if not expected_sources:
-            return {"score": 0.0, "explanation": "No expected sources provided (negative control)."}
+        metadata = input_data.get("metadata", {})
+        expected_sources = set(metadata.get("expected_sources", []))
+        gold_chunk_ids = set(metadata.get("gold_chunk_ids", []))
+        
+        if not expected_sources and not gold_chunk_ids:
+            return {"score": 0.0, "explanation": "No expected sources or gold chunks provided.", "evidence_breakdown": {}}
 
-        retrieved_sources = set([e.get("source", "") for e in retrieved_evidence[:self.k]])
+        retrieved_chunks = retrieved_evidence[:self.k]
+        retrieved_chunk_ids = set([c.get("chunk_id", "") for c in retrieved_chunks])
+        retrieved_sources = set([c.get("source", "") for c in retrieved_chunks])
+
+        # 1. Chunk-Level Recall (Strict)
+        if gold_chunk_ids:
+            hits = gold_chunk_ids.intersection(retrieved_chunk_ids)
+            score = len(hits) / len(gold_chunk_ids)
+            return {
+                "score": score,
+                "explanation": f"Retrieved {len(hits)} out of {len(gold_chunk_ids)} gold chunks.",
+                "evidence_breakdown": {
+                    "type": "chunk_level",
+                    "gold_chunk_ids": list(gold_chunk_ids),
+                    "retrieved_chunk_ids": list(retrieved_chunk_ids),
+                    "hits": list(hits)
+                }
+            }
+        
+        # 2. Document-Level Recall (Fallback)
         hits = expected_sources.intersection(retrieved_sources)
         score = len(hits) / len(expected_sources)
-
         return {
             "score": score,
             "explanation": f"Retrieved {len(hits)} out of {len(expected_sources)} expected sources.",
             "evidence_breakdown": {
+                "type": "document_level",
                 "expected": list(expected_sources),
                 "retrieved_top_k": list(retrieved_sources),
                 "hits": list(hits)
@@ -67,11 +89,7 @@ class AbstentionEvaluator(BaseEvaluator):
         expected_sources = input_data.get("metadata", {}).get("expected_sources", [])
         answer = (system_output.get("answer", "") or "").lower()
         
-        # Check if the answer contains any abstention phrases
         abstained = any(phrase in answer for phrase in self.abstention_phrases)
-        
-        # If there are no expected sources, the system SHOULD abstain (score 1.0 if abstained)
-        # If there are expected sources, the system SHOULD NOT abstain (score 1.0 if NOT abstained)
         should_abstain = len(expected_sources) == 0
         
         if should_abstain:
