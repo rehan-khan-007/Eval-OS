@@ -10,7 +10,8 @@ infrastructure and real API calls — not estimates.
 | Retrieval recall@3 (47 docs, multi-domain) | **88.9%** (Dense) |
 | Retrieval recall@5 (47 docs, multi-domain) | **91.7%** (Dense, top_k=5) |
 | Models benchmarked | 5 (gpt-4o-mini, gpt-4o, claude-haiku-4.5, gemini-3.7-flash, llama-3.1-70b) |
-| Best Faithfulness | **99.0%** (gpt-4o-mini, top_k=5) |
+| Best Faithfulness (Groundedness) | **96.8%** (gpt-4o-mini) |
+| Answer Quality (Correctness + Completeness) | **82.6%** (gpt-4o-mini) |
 | Best Value (Quality/Cost) | **gpt-4o-mini** (96.8% faithfulness for $0.006) |
 | LLM Judge Human Agreement | **100.0%** (Raw Agreement on 5-sample HITL audit) |
 | Total spend across 5-model benchmark | **~$0.21** |
@@ -37,6 +38,8 @@ infrastructure and real API calls — not estimates.
    *Proves EvalOS can act as a CI/CD gate, detecting a 4.2% recall regression when switching from Dense to Hybrid retrieval.*
 9. **[Configuration-Driven Runtime](docs/benchmarks/09_config_driven_runtime.md)**
    *Proves the database configuration drives the runtime. Increasing `top_k` to 5 dynamically changed the evaluator to `recall@5` and improved recall to 91.7%.*
+10. **[Answer Quality Evaluation](docs/benchmarks/10_answer_quality.md)**
+    *Proves Groundedness != Correctness. The system scores 96.2% on faithfulness (no hallucinations) but only 82.6% on answer quality (incomplete answers).*
 
 ---
 
