@@ -39,3 +39,26 @@ A rigorous, honest log of the architecture decisions, bugs found, and real resul
 **Architecture Change:** Created a new `AnswerQualityEvaluator` that prompts the LLM Judge to score `correctness` (is it factually right?) and `completeness` (does it address all parts of the question?).
 
 **Result:** EvalOS exposed a massive gap. The system scored **96.2% on Faithfulness** (not hallucinating) but only **82.6% on Answer Quality** (providing correct and complete answers). This proved that measuring only faithfulness gives a falsely optimistic view of system performance.
+
+---
+
+## Phase Q4: Rich HITL & Human Calibration
+
+**What was done:** The audit noted that `HumanLabel` only stored a boolean (`agrees_with_judge`). This limited our ability to calibrate the LLM Judge. 
+
+**Architecture Change:** Added `human_score`, `failure_category`, and `comment` to the `HumanLabel` schema. The CLI now prompts the user for an independent score (0.0-1.0), a failure category, and a comment.
+
+**Result:** EvalOS caught the LLM Judge being overly lenient. The Judge scored all 5 samples as 1.0 (perfect faithfulness), but the human scored them lower (e.g., 0.65) because they were "faithful but substantially incomplete." Raw Agreement dropped to 80%. This proved the Judge conflates Groundedness with Completeness.
+
+---
+
+## Phase Q5: Splitting the God Module & Adding Tests
+
+**What was done:** The audit identified that `analysis_engine.py` was becoming a "god module" (~260 lines) handling aggregation, statistics, diagnosis, and regression. It also noted a complete lack of tests.
+
+**Architecture Change:** 
+1. Split `analysis_engine.py` into a modular `analysis/` directory (`aggregation.py`, `statistics.py`, `diagnosis.py`, `regression.py`). The original file is now just a 13-line facade for backward compatibility.
+2. Extracted the RRF math from `retrieval.py` into a pure `fuse_rrf()` function.
+3. Added `pytest` and created `tests/test_cache.py` and `tests/test_rrf.py`.
+
+**Result:** 5/5 tests passed. EvalOS now has a deterministic, testable core. The RRF fusion logic is verified to correctly prioritize chunks that appear in both dense and FTS results.

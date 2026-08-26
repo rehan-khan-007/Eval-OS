@@ -5,6 +5,24 @@ from openai import AsyncOpenAI
 from cache import generate_cache_key, get_cached, set_cached
 import os
 
+def fuse_rrf(dense_results: list[dict], fts_results: list[dict], top_k: int = 3, rrf_k: int = 60) -> list[dict]:
+    """Pure function to fuse dense and FTS results using Reciprocal Rank Fusion."""
+    scores = {}
+
+    for rank, chunk in enumerate(dense_results):
+        key = chunk["chunk_id"]
+        scores[key] = {"score": scores.get(key, {}).get("score", 0.0) + 1.0 / (rrf_k + rank + 1), "data": chunk}
+
+    for rank, chunk in enumerate(fts_results):
+        key = chunk["chunk_id"]
+        if key in scores:
+            scores[key]["score"] += 1.0 / (rrf_k + rank + 1)
+        else:
+            scores[key] = {"score": 1.0 / (rrf_k + rank + 1), "data": chunk}
+
+    fused = sorted(scores.items(), key=lambda item: item[1]["score"], reverse=True)[:top_k]
+    return [val["data"] for key, val in fused]
+
 class RetrievalEngine:
     def __init__(self, embedding_model: str = "openai/text-embedding-3-small"):
         self.client = AsyncOpenAI(
@@ -35,12 +53,10 @@ class RetrievalEngine:
             )
             result = await db.execute(stmt)
             chunks = result.scalars().all()
-            # P0 Fix: Return chunk_id to use as a unique RRF key
             return [{"chunk_id": c.id, "source": c.source, "text": c.text} for c in chunks]
 
     async def postgres_fts_search(self, query: str, top_k: int = 3) -> list[dict]:
         async with AsyncSessionLocal() as db:
-            # P0 Fix: Renamed from bm25 to postgres_fts. ts_rank is not BM25.
             stmt = (
                 select(DocumentChunk)
                 .where(text("search_vector @@ plainto_tsquery('english', :query)"))
@@ -54,21 +70,4 @@ class RetrievalEngine:
     async def hybrid_search(self, query: str, top_k: int = 3) -> list[dict]:
         dense_results = await self.dense_search(query, top_k=10)
         fts_results = await self.postgres_fts_search(query, top_k=10)
-
-        rrf_k = 60
-        scores = {}
-
-        # P0 Fix: Use chunk_id as the unique key for RRF, not (source, text)
-        for rank, chunk in enumerate(dense_results):
-            key = chunk["chunk_id"]
-            scores[key] = {"score": scores.get(key, {}).get("score", 0.0) + 1.0 / (rrf_k + rank + 1), "data": chunk}
-
-        for rank, chunk in enumerate(fts_results):
-            key = chunk["chunk_id"]
-            if key in scores:
-                scores[key]["score"] += 1.0 / (rrf_k + rank + 1)
-            else:
-                scores[key] = {"score": 1.0 / (rrf_k + rank + 1), "data": chunk}
-
-        fused = sorted(scores.items(), key=lambda item: item[1]["score"], reverse=True)[:top_k]
-        return [val["data"] for key, val in fused]
+        return fuse_rrf(dense_results, fts_results, top_k=top_k)
