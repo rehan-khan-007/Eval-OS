@@ -16,7 +16,9 @@ def run_eval(
     system: str = typer.Option("openrouter", "--system", help="mock, openrouter, or rag"),
     model: str = typer.Option("openai/gpt-4o-mini", "--model"),
     judge_model: str = typer.Option("openai/gpt-4o-mini", "--judge-model"),
-    retriever: str = typer.Option("hybrid", "--retriever", help="dense, bm25, or hybrid")
+    retriever: str = typer.Option("hybrid", "--retriever", help="dense, bm25, or hybrid"),
+    top_k: int = typer.Option(3, "--top-k", help="Number of chunks to retrieve"),
+    embedding_model: str = typer.Option("openai/text-embedding-3-small", "--embedding-model")
 ):
     async def run():
         async with AsyncSessionLocal() as db:
@@ -36,6 +38,12 @@ def run_eval(
 
             sys_config_id = f"cfg-{config_name.lower().replace(' ', '-')}"
             
+            # P1 Fix: Build the retrieval config that will drive the runtime
+            retrieval_config = {
+                "top_k": top_k,
+                "embedding_model": embedding_model
+            }
+            
             config_stmt = select(SystemConfig).where(SystemConfig.id == sys_config_id)
             config_result = await db.execute(config_stmt)
             sys_config = config_result.scalars().first()
@@ -46,6 +54,7 @@ def run_eval(
                     config_name=config_name,
                     model=model,
                     retriever_type=retriever,
+                    retrieval_config=retrieval_config,
                     prompt_version="v1"
                 )
                 db.add(sys_config)
@@ -60,8 +69,9 @@ def run_eval(
             adapter = OpenRouterAdapter(model=model)
             typer.echo(f"Using OpenRouterAdapter with model: {model}")
         elif system == "rag":
-            adapter = RAGAdapter(model=model, retriever_type=retriever)
-            typer.echo(f"Using RAGAdapter with model: {model} and retriever: {retriever}")
+            # P1 Fix: Pass the config to the adapter
+            adapter = RAGAdapter(model=model, retriever_type=retriever, retrieval_config=retrieval_config)
+            typer.echo(f"Using RAGAdapter with model: {model} and retriever: {retriever} (top_k={top_k})")
         else:
             typer.echo("Invalid system. Choose 'mock', 'openrouter', or 'rag'.")
             return
@@ -71,7 +81,7 @@ def run_eval(
             evaluators.append(ToolSelectionEvaluator())
             typer.echo("Detected agent dataset. Using ToolSelectionEvaluator.")
         if examples[0]["metadata"].get("expected_sources") is not None:
-            evaluators.append(SourceRecallEvaluator(k=3))
+            evaluators.append(SourceRecallEvaluator(k=top_k))
             evaluators.append(LLMJudgeEvaluator(judge_model=judge_model))
             evaluators.append(AbstentionEvaluator())
             typer.echo("Detected RAG dataset. Using SourceRecallEvaluator, LLMJudgeEvaluator, and AbstentionEvaluator.")
@@ -86,7 +96,9 @@ def run_benchmark(
     dataset_version_id: str = typer.Option(..., "--dataset-version"),
     models: str = typer.Option("openai/gpt-4o-mini", "--models", help="Comma-separated list of models"),
     judge_model: str = typer.Option("openai/gpt-4o-mini", "--judge-model"),
-    retriever: str = typer.Option("hybrid", "--retriever", help="dense, bm25, or hybrid")
+    retriever: str = typer.Option("hybrid", "--retriever", help="dense, bm25, or hybrid"),
+    top_k: int = typer.Option(3, "--top-k", help="Number of chunks to retrieve"),
+    embedding_model: str = typer.Option("openai/text-embedding-3-small", "--embedding-model")
 ):
     """Runs a benchmark across multiple models for the same dataset."""
     async def run():
@@ -108,6 +120,12 @@ def run_benchmark(
         model_list = [m.strip() for m in models.split(",")]
         run_ids = []
         
+        # P1 Fix: Build config for benchmark
+        retrieval_config = {
+            "top_k": top_k,
+            "embedding_model": embedding_model
+        }
+        
         for model in model_list:
             typer.echo(f"\n{'='*50}\nStarting benchmark for: {model} ({retriever})\n{'='*50}")
             
@@ -125,6 +143,7 @@ def run_benchmark(
                         config_name=config_name,
                         model=model,
                         retriever_type=retriever,
+                        retrieval_config=retrieval_config,
                         prompt_version="v1"
                     )
                     db.add(sys_config)
@@ -132,8 +151,8 @@ def run_benchmark(
                 else:
                     typer.echo(f"Reusing existing SystemConfig: {sys_config_id}")
 
-            adapter = RAGAdapter(model=model, retriever_type=retriever)
-            evaluators = [LatencyEvaluator(), SourceRecallEvaluator(k=3), LLMJudgeEvaluator(judge_model=judge_model), AbstentionEvaluator()]
+            adapter = RAGAdapter(model=model, retriever_type=retriever, retrieval_config=retrieval_config)
+            evaluators = [LatencyEvaluator(), SourceRecallEvaluator(k=top_k), LLMJudgeEvaluator(judge_model=judge_model), AbstentionEvaluator()]
             
             engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
             run_id = await engine.execute_run(dataset_version_id, examples)
