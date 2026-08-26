@@ -20,3 +20,9 @@ def test_cache_key_prefix():
     """Keys should be prefixed with 'evalos:'."""
     key = generate_cache_key("test")
     assert key.startswith("evalos:")
+
+def test_cache_key_versioning():
+    """Changing the evaluator version should change the cache key."""
+    key_v1 = generate_cache_key("faithfulness", "v1", "gpt-4o-mini", "ctx", "ans")
+    key_v2 = generate_cache_key("faithfulness", "v2", "gpt-4o-mini", "ctx", "ans")
+    assert key_v1 != key_v2

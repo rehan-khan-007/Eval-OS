@@ -40,7 +40,8 @@ Respond with ONLY a JSON object, no other text:
   "reasoning": "one brief sentence summarizing the evaluation"
 }}"""
         
-        cache_key = generate_cache_key("judge", self.judge_model, context_text, answer)
+        # P1 Fix: Include evaluator name and version in cache key for version-aware caching
+        cache_key = generate_cache_key(self.name, self.version, self.judge_model, context_text, answer)
         cached_verdict = await get_cached(cache_key)
         if cached_verdict:
             return cached_verdict
@@ -57,7 +58,6 @@ Respond with ONLY a JSON object, no other text:
             
             claims = verdict.get("claims", [])
             if not claims:
-                # P0 Fix: No claims extracted is indeterminate, not a perfect score
                 result = {
                     "score": -1.0,
                     "explanation": "Judge extracted no claims.",
@@ -81,7 +81,6 @@ Respond with ONLY a JSON object, no other text:
             return result
             
         except Exception as e:
-            # P0 Fix: API/Judge errors are not zero-score answer failures
             return {
                 "score": -1.0,
                 "explanation": f"Judge API error: {str(e)}",

@@ -45,7 +45,8 @@ Respond with ONLY a JSON object, no other text:
   "reasoning": "one brief sentence explaining your evaluation"
 }}"""
         
-        cache_key = generate_cache_key("quality", self.judge_model, question, context_text, answer)
+        # P1 Fix: Include evaluator name and version in cache key
+        cache_key = generate_cache_key(self.name, self.version, self.judge_model, question, context_text, answer)
         cached_verdict = await get_cached(cache_key)
         if cached_verdict:
             return cached_verdict
@@ -63,7 +64,6 @@ Respond with ONLY a JSON object, no other text:
             correctness = float(verdict.get("correctness", 0.0))
             completeness = float(verdict.get("completeness", 0.0))
             
-            # Average the two scores for a general "answer_quality" score
             score = (correctness + completeness) / 2.0
             
             result = {
