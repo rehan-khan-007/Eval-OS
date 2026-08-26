@@ -94,3 +94,16 @@ A rigorous, honest log of the architecture decisions, bugs found, and real resul
 **Architecture Change:** Updated `analysis/regression.py` to call the `compare_runs` statistical engine. A metric is only flagged as a regression if it drops by the threshold AND the 95% Confidence Interval excludes zero.
 
 **Result:** EvalOS successfully prevented a false positive. The 4.2% recall drop between Dense and Hybrid was ignored because it wasn't statistically significant. The 2.4-second latency increase was flagged as a significant regression, correctly blocking the deployment.
+
+---
+
+## Phase B1: Reference-Answer Evaluation & The JSONB Mutation Bug
+
+**What was done:** The CTO audit (Stage B) required reference-based evaluation to test true factual correctness, rather than just checking if an answer was grounded in retrieved context. We built the `ReferenceAnswerEvaluator` to compare generated answers against a `reference_answer` in the database metadata.
+
+**Real bug found and fixed (The JSONB Mutation Pain):** 
+We wrote a migration script to insert 3 reference answers into the `metadata_json` JSONB column of the `EvaluationExample` table. The script ran, reported success, but the database remained empty. 
+**Root Cause:** SQLAlchemy 2.0 does not track in-place mutations of JSONB dictionaries by default. Doing `ex.metadata_json["reference_answer"] = "..."` changes the Python object in memory, but SQLAlchemy does not mark the row as "dirty" for the `UPDATE` query, so `db.commit()` does nothing.
+**Fix:** We bypassed the ORM entirely and used a raw SQL `UPDATE` statement with Postgres `jsonb_set()` to merge the new key into the JSONB column. This forced the database to update, and the `ReferenceAnswerEvaluator` successfully picked up the ground truth.
+
+**Result:** The `ReferenceAnswerEvaluator` correctly scored the 3 questions with ground truth (achieving 100% correctness) and returned `indeterminate` (-1.0) for the 33 questions without ground truth. The Analysis Engine correctly filtered the `-1.0` scores from the aggregate average, proving the evaluator fails gracefully.
