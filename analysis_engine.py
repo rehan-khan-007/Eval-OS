@@ -27,7 +27,8 @@ class AnalysisEngine:
             
             metric_scores = defaultdict(list)
             for m in metrics:
-                metric_scores[m.evaluator_name].append(m.score)
+                if m.score >= 0.0:  # Ignore indeterminate (-1.0) scores in aggregates
+                    metric_scores[m.evaluator_name].append(m.score)
                 
             aggregated_metrics = {}
             for name, scores in metric_scores.items():
@@ -70,7 +71,7 @@ class AnalysisEngine:
             slices = defaultdict(lambda: defaultdict(list))
             
             for exec, metric, example in rows:
-                if metric.evaluator_name == "latency_ms":
+                if metric.evaluator_name == "latency_ms" or metric.score < 0.0:
                     continue
                     
                 if slice_field == "domain":
@@ -100,7 +101,7 @@ class AnalysisEngine:
                 .where(Execution.run_id == run_a_id, MetricResult.evaluator_name == metric_name)
             )
             rows_a = (await db.execute(stmt_a)).all()
-            scores_a = {exec.example_id: metric.score for exec, metric in rows_a}
+            scores_a = {exec.example_id: metric.score for exec, metric in rows_a if metric.score >= 0.0}
 
             stmt_b = (
                 select(Execution, MetricResult)
@@ -108,7 +109,7 @@ class AnalysisEngine:
                 .where(Execution.run_id == run_b_id, MetricResult.evaluator_name == metric_name)
             )
             rows_b = (await db.execute(stmt_b)).all()
-            scores_b = {exec.example_id: metric.score for exec, metric in rows_b}
+            scores_b = {exec.example_id: metric.score for exec, metric in rows_b if metric.score >= 0.0}
 
             if not scores_a or not scores_b:
                 return None
@@ -135,9 +136,12 @@ class AnalysisEngine:
 
             diffs_array = np.array(diffs)
             n = len(diffs_array)
+            
+            # P1 Fix: Use a deterministic seed for reproducible statistical CIs
+            rng = np.random.default_rng(seed=42)
             boot_means = []
             for _ in range(1000):
-                sample = np.random.choice(diffs_array, size=n, replace=True)
+                sample = rng.choice(diffs_array, size=n, replace=True)
                 boot_means.append(np.mean(sample))
             
             lower_bound = np.percentile(boot_means, 2.5)
@@ -180,6 +184,7 @@ class AnalysisEngine:
                 "retrieval_failure": [],
                 "generation_failure": [],
                 "system_failure": [],
+                "evaluator_error": [],
                 "negative_control_pass": [],
                 "negative_control_fail": [],
                 "full_success": []
@@ -206,6 +211,8 @@ class AnalysisEngine:
                 
                 if exec.status != "success":
                     taxonomy["system_failure"].append(entry)
+                elif faithfulness == -1.0:
+                    taxonomy["evaluator_error"].append(entry)
                 elif len(expected_sources) == 0:
                     if abstention == 1.0:
                         taxonomy["negative_control_pass"].append(entry)
@@ -231,18 +238,29 @@ class AnalysisEngine:
         regressions = []
         improvements = []
         
-        # Compare all common metrics
+        # P0 Fix: Explicitly handle latency_ms which is nested under its own dict
+        b_lat = baseline_data["latency_ms"]["avg"]
+        n_lat = new_data["latency_ms"]["avg"]
+        lat_diff = b_lat - n_lat # Positive diff means new run is faster (improvement)
+        
+        # Latency threshold (e.g., 500ms difference)
+        lat_threshold_ms = 500.0 
+        if lat_diff < -lat_threshold_ms:
+            regressions.append({"metric": "latency_avg_ms", "baseline": b_lat, "new": n_lat, "diff": lat_diff})
+        elif lat_diff > lat_threshold_ms:
+            improvements.append({"metric": "latency_avg_ms", "baseline": b_lat, "new": n_lat, "diff": lat_diff})
+            
+        # Compare all other standard metrics
         all_metrics = set(baseline_data["metrics"].keys()).union(set(new_data["metrics"].keys()))
         
         for metric in all_metrics:
+            if metric == "latency_ms":
+                continue
+                
             b_score = baseline_data["metrics"].get(metric, 0.0)
             n_score = new_data["metrics"].get(metric, 0.0)
             diff = n_score - b_score
             
-            # For latency, lower is better. For everything else, higher is better.
-            if metric == "latency_ms":
-                diff = b_score - n_score # Invert so positive diff means improvement (faster)
-                
             if diff < -threshold:
                 regressions.append({"metric": metric, "baseline": b_score, "new": n_score, "diff": diff})
             elif diff > threshold:
