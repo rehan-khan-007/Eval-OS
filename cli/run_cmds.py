@@ -4,6 +4,7 @@ from database import AsyncSessionLocal
 from models import EvaluationExample, SystemConfig
 from evaluators.deterministic import ToolSelectionEvaluator, SourceRecallEvaluator, LatencyEvaluator, AbstentionEvaluator
 from evaluators.llm_judge import LLMJudgeEvaluator
+from evaluators.answer_quality import AnswerQualityEvaluator
 from adapters.mock_adapter import MockSystemAdapter
 from adapters.openrouter_adapter import OpenRouterAdapter
 from adapters.rag_adapter import RAGAdapter
@@ -38,7 +39,6 @@ def run_eval(
 
             sys_config_id = f"cfg-{config_name.lower().replace(' ', '-')}"
             
-            # P1 Fix: Build the retrieval config that will drive the runtime
             retrieval_config = {
                 "top_k": top_k,
                 "embedding_model": embedding_model
@@ -69,7 +69,6 @@ def run_eval(
             adapter = OpenRouterAdapter(model=model)
             typer.echo(f"Using OpenRouterAdapter with model: {model}")
         elif system == "rag":
-            # P1 Fix: Pass the config to the adapter
             adapter = RAGAdapter(model=model, retriever_type=retriever, retrieval_config=retrieval_config)
             typer.echo(f"Using RAGAdapter with model: {model} and retriever: {retriever} (top_k={top_k})")
         else:
@@ -84,7 +83,8 @@ def run_eval(
             evaluators.append(SourceRecallEvaluator(k=top_k))
             evaluators.append(LLMJudgeEvaluator(judge_model=judge_model))
             evaluators.append(AbstentionEvaluator())
-            typer.echo("Detected RAG dataset. Using SourceRecallEvaluator, LLMJudgeEvaluator, and AbstentionEvaluator.")
+            evaluators.append(AnswerQualityEvaluator(judge_model=judge_model))
+            typer.echo("Detected RAG dataset. Using SourceRecallEvaluator, LLMJudgeEvaluator, AbstentionEvaluator, and AnswerQualityEvaluator.")
 
         engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
         typer.echo("Starting evaluation run...")
@@ -120,7 +120,6 @@ def run_benchmark(
         model_list = [m.strip() for m in models.split(",")]
         run_ids = []
         
-        # P1 Fix: Build config for benchmark
         retrieval_config = {
             "top_k": top_k,
             "embedding_model": embedding_model
@@ -152,7 +151,13 @@ def run_benchmark(
                     typer.echo(f"Reusing existing SystemConfig: {sys_config_id}")
 
             adapter = RAGAdapter(model=model, retriever_type=retriever, retrieval_config=retrieval_config)
-            evaluators = [LatencyEvaluator(), SourceRecallEvaluator(k=top_k), LLMJudgeEvaluator(judge_model=judge_model), AbstentionEvaluator()]
+            evaluators = [
+                LatencyEvaluator(), 
+                SourceRecallEvaluator(k=top_k), 
+                LLMJudgeEvaluator(judge_model=judge_model), 
+                AbstentionEvaluator(),
+                AnswerQualityEvaluator(judge_model=judge_model)
+            ]
             
             engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
             run_id = await engine.execute_run(dataset_version_id, examples)
