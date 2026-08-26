@@ -119,3 +119,13 @@ We wrote a migration script to insert 3 reference answers into the `metadata_jso
 2. Upgraded `SourceRecallEvaluator` to v2. It now checks for exact `chunk_id` matches if `gold_chunk_ids` exist, and falls back to document-level matching if they don't.
 
 **Result:** The recall score remained 88.9%, proving the Dense retriever is highly precise at the chunk level, not just lucky at the document level.
+
+---
+
+## Phase B3: HITL Calibration & Confusion Matrix
+
+**What was done:** The CTO audit (Stage B) required a real confusion matrix and correlation analysis between the LLM Judge and human reviewers, based on the rich labels added in Phase Q4.
+
+**Architecture Change:** Created `analysis/calibration.py` to calculate Pearson Correlation, Mean Absolute Error (MAE), and a binary Confusion Matrix (Correct vs Incorrect). Updated the CLI to print this report.
+
+**Result:** EvalOS proved the LLM Judge is statistically biased. The Pearson Correlation was 0.0 (because the Judge gave all 5 samples a 1.0, resulting in zero variance). The MAE was 0.1320, proving the Judge is 13.2% too lenient on average. The Confusion Matrix caught the 1 False Positive (Judge said correct, human said incorrect).

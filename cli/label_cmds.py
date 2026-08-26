@@ -6,11 +6,11 @@ from models import Execution, MetricResult, HumanLabel
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sklearn.metrics import cohen_kappa_score
+from analysis_engine import AnalysisEngine
 
 def label_judgements(run_id: str = typer.Argument(..., help="The Run ID to label judgements for")):
     """Prompts the user to verify LLM Judge verdicts for a random sample of executions."""
     async def run():
-        # 1. Fetch samples in a short-lived session to avoid Neon idle timeouts
         async with AsyncSessionLocal() as db:
             stmt = (
                 select(Execution, MetricResult)
@@ -27,7 +27,6 @@ def label_judgements(run_id: str = typer.Argument(..., help="The Run ID to label
                 typer.echo("No executions with faithfulness metrics found for this run.")
                 return
 
-        # 2. Prompt user outside of DB session
         labels_to_save = []
         for i, (exec, metric) in enumerate(rows):
             typer.echo(f"\n{'='*70}\nSample {i+1}/5\n{'='*70}")
@@ -46,9 +45,6 @@ def label_judgements(run_id: str = typer.Argument(..., help="The Run ID to label
                 typer.echo(f"  {symbol} {c.get('claim', '')} [{status}]")
             typer.echo(f"  Reasoning: {metric.explanation}")
             
-            # --- NEW RICH PROMPTS ---
-            
-            # Prompt for human score
             valid_score = False
             while not valid_score:
                 score_str = typer.prompt("Enter your independent score (0.0 to 1.0)", default="1.0")
@@ -61,7 +57,6 @@ def label_judgements(run_id: str = typer.Argument(..., help="The Run ID to label
                 except ValueError:
                     typer.echo("Invalid number. Please enter a float (e.g., 0.5).")
             
-            # Prompt for failure category
             valid_cat = False
             while not valid_cat:
                 cat = typer.prompt("Enter failure category (none, retrieval_failure, generation_failure, system_error)", default="none")
@@ -71,15 +66,10 @@ def label_judgements(run_id: str = typer.Argument(..., help="The Run ID to label
                 else:
                     typer.echo("Invalid category. Choose from the list.")
             
-            # Prompt for comment
             comment = typer.prompt("Optional: Add a brief comment (press enter to skip)", default="")
-            
-            # Derive agrees_with_judge based on score (if judge score > 0.8 and human score > 0.8, they agree)
             agrees = abs(human_score - metric.score) < 0.2
-            
             labels_to_save.append((metric.id, exec.id, agrees, human_score, failure_category, comment))
 
-        # 3. Save to DB in a new short-lived session
         async with AsyncSessionLocal() as db:
             for metric_id, exec_id, agrees, h_score, f_cat, comment in labels_to_save:
                 human_label = HumanLabel(
@@ -98,46 +88,27 @@ def label_judgements(run_id: str = typer.Argument(..., help="The Run ID to label
     asyncio.run(run())
 
 def calculate_agreement(run_id: str = typer.Argument(..., help="The Run ID to calculate agreement for")):
-    """Calculates the Cohen's Kappa and Raw Agreement between the LLM Judge and Human Labels."""
+    """Calculates Cohen's Kappa, Raw Agreement, Pearson Correlation, and Confusion Matrix."""
     async def run():
-        async with AsyncSessionLocal() as db:
-            stmt = (
-                select(MetricResult, HumanLabel)
-                .join(HumanLabel, MetricResult.id == HumanLabel.metric_result_id)
-                .join(Execution, MetricResult.execution_id == Execution.id)
-                .where(Execution.run_id == run_id)
-            )
-            result = await db.execute(stmt)
-            rows = result.all()
+        data = await AnalysisEngine.calculate_calibration(run_id)
+        if not data:
+            typer.echo("No human labels found for this run. Run `label-judgements` first.")
+            return
             
-            if not rows:
-                typer.echo("No human labels found for this run. Run `label-judgements` first.")
-                return
-                
-            judge_labels = []
-            human_labels = []
-            
-            for metric, human in rows:
-                judge_labels.append(1 if metric.score >= 0.8 else 0)
-                human_labels.append(1 if human.human_score >= 0.8 else 0)
-                
-            matches = sum(1 for j, h in zip(judge_labels, human_labels) if j == h)
-            raw_agreement = matches / len(rows) * 100
-            
-            kappa = 0.0
-            if len(set(judge_labels)) > 1 and len(set(human_labels)) > 1:
-                kappa = cohen_kappa_score(human_labels, judge_labels)
-            
-            typer.echo("=" * 50)
-            typer.echo(f"Inter-Rater Agreement for Run {run_id}")
-            typer.echo("=" * 50)
-            typer.echo(f"Total Labeled Samples: {len(rows)}")
-            typer.echo(f"Raw Agreement: {raw_agreement:.1f}%")
-            typer.echo(f"Cohen's Kappa: {kappa:.4f}")
-            typer.echo("=" * 50)
-            if raw_agreement > 80:
-                typer.echo("Assessment: High raw agreement. The LLM Judge is generally reliable.")
-            else:
-                typer.echo("Assessment: Low raw agreement. The LLM Judge may need prompt refinement.")
-            typer.echo("=" * 50)
+        typer.echo("=" * 50)
+        typer.echo(f"Evaluator Calibration Report for Run {run_id}")
+        typer.echo("=" * 50)
+        typer.echo(f"Total Labeled Samples: {data['total_samples']}")
+        typer.echo(f"Pearson Correlation: {data['pearson_correlation']:.4f}")
+        typer.echo(f"Mean Absolute Error (MAE): {data['mean_absolute_error']:.4f}")
+        typer.echo("=" * 50)
+        
+        cm = data['confusion_matrix']
+        typer.echo("Confusion Matrix (Judge vs Human):")
+        typer.echo(f"  True Positives (Both Correct): {cm['true_positive']}")
+        typer.echo(f"  True Negatives (Both Incorrect): {cm['true_negative']}")
+        typer.echo(f"  False Positives (Judge Correct, Human Incorrect): {cm['false_positive']}")
+        typer.echo(f"  False Negatives (Judge Incorrect, Human Correct): {cm['false_negative']}")
+        typer.echo("=" * 50)
+        
     asyncio.run(run())
