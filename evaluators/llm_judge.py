@@ -19,7 +19,7 @@ class LLMJudgeEvaluator(BaseEvaluator):
         context_text = "\n\n".join([e.get("text", "") for e in retrieved_evidence])
         
         if not answer or not context_text:
-            return {"score": 0.0, "explanation": "No answer or context provided.", "evidence_breakdown": {}}
+            return {"score": -1.0, "explanation": "No answer or context provided.", "evidence_breakdown": {}, "status": "indeterminate"}
             
         prompt = f"""You are evaluating whether an AI-generated answer is genuinely grounded in the provided source context.
 Analyze the answer and extract individual claims.
@@ -40,13 +40,11 @@ Respond with ONLY a JSON object, no other text:
   "reasoning": "one brief sentence summarizing the evaluation"
 }}"""
         
-        # 1. Check Cache
         cache_key = generate_cache_key("judge", self.judge_model, context_text, answer)
         cached_verdict = await get_cached(cache_key)
         if cached_verdict:
             return cached_verdict
 
-        # 2. Cache Miss - Call API
         try:
             response = await self.client.chat.completions.create(
                 model=self.judge_model,
@@ -59,20 +57,34 @@ Respond with ONLY a JSON object, no other text:
             
             claims = verdict.get("claims", [])
             if not claims:
-                score = 1.0 
-            else:
-                supported = sum(1 for c in claims if c.get("status") == "supported")
-                score = supported / len(claims)
+                # P0 Fix: No claims extracted is indeterminate, not a perfect score
+                result = {
+                    "score": -1.0,
+                    "explanation": "Judge extracted no claims.",
+                    "evidence_breakdown": {"claims": []},
+                    "status": "indeterminate"
+                }
+                await set_cached(cache_key, result)
+                return result
                 
+            supported = sum(1 for c in claims if c.get("status") == "supported")
+            score = supported / len(claims)
+            
             result = {
                 "score": score,
                 "explanation": verdict.get("reasoning", ""),
-                "evidence_breakdown": {"claims": claims}
+                "evidence_breakdown": {"claims": claims},
+                "status": "success"
             }
             
-            # 3. Save to Cache
             await set_cached(cache_key, result)
-            
             return result
+            
         except Exception as e:
-            return {"score": 0.0, "explanation": f"Judge error: {str(e)}", "evidence_breakdown": {}}
+            # P0 Fix: API/Judge errors are not zero-score answer failures
+            return {
+                "score": -1.0,
+                "explanation": f"Judge API error: {str(e)}",
+                "evidence_breakdown": {},
+                "status": "evaluator_error"
+            }
