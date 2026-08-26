@@ -14,7 +14,6 @@ class RAGAdapter(BaseSystemAdapter):
         self.model = model
         self.retriever_type = retriever_type
         
-        # P1 Fix: Unpack retrieval config, falling back to defaults if missing
         self.retrieval_config = retrieval_config or {}
         embedding_model = self.retrieval_config.get("embedding_model", "openai/text-embedding-3-small")
         self.top_k = self.retrieval_config.get("top_k", 3)
@@ -25,7 +24,6 @@ class RAGAdapter(BaseSystemAdapter):
         if self.retriever_type == "dense":
             return await self.retrieval_engine.dense_search(query, top_k=self.top_k)
         elif self.retriever_type == "bm25":
-            # P0 Fix: Renamed method call to match the FTS rename
             return await self.retrieval_engine.postgres_fts_search(query, top_k=self.top_k)
         elif self.retriever_type == "hybrid":
             return await self.retrieval_engine.hybrid_search(query, top_k=self.top_k)
@@ -37,11 +35,15 @@ class RAGAdapter(BaseSystemAdapter):
         start_time = time.time()
         
         try:
-            # P1 Fix: Uses self.top_k from config
             retrieved_evidence = await self.retrieve(question)
             context_text = "\n\n".join([f"Source: {c['source']}\nContent: {c['text']}" for c in retrieved_evidence])
             
-            system_prompt = "Answer the user's question using only the provided context. If the context doesn't contain the answer, say so plainly."
+            # P1 Fix: Force the LLM to output citations so we can evaluate them
+            system_prompt = (
+                "Answer the user's question using only the provided context. "
+                "If the context doesn't contain the answer, say so plainly. "
+                "You MUST cite the source document for every claim you make using the format [Source: filename.pdf] at the end of the sentence."
+            )
             user_prompt = f"Context:\n{context_text}\n\nQuestion: {question}"
             
             cache_key = generate_cache_key(self.model, system_prompt, user_prompt)

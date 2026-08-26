@@ -62,3 +62,15 @@ A rigorous, honest log of the architecture decisions, bugs found, and real resul
 3. Added `pytest` and created `tests/test_cache.py` and `tests/test_rrf.py`.
 
 **Result:** 5/5 tests passed. EvalOS now has a deterministic, testable core. The RRF fusion logic is verified to correctly prioritize chunks that appear in both dense and FTS results.
+
+---
+
+## Phase Q6: Citation Correctness
+
+**What was done:** The audit required verifying that specific cited chunks actually support the claims they are attached to (Section 12). General Faithfulness only checks if the answer is grounded in the *entire* context block.
+
+**Architecture Change:**
+1. Updated the `RAGAdapter` system prompt to force the LLM to cite sources using `[Source: filename.pdf]` for every claim.
+2. Created a `CitationEvaluator` that prompts the LLM Judge to extract claims, identify their attached citations, and verify if the text from the *specifically cited document* supports the claim.
+
+**Result:** EvalOS measured a 100.0% citation correctness score. The LLM correctly attributed claims to the exact supporting documents. Forcing citations caused a slight drop in general Faithfulness (96.8% -> 95.0%), a known trade-off when forcing structured output.

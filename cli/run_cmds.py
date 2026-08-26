@@ -5,6 +5,7 @@ from models import EvaluationExample, SystemConfig
 from evaluators.deterministic import ToolSelectionEvaluator, SourceRecallEvaluator, LatencyEvaluator, AbstentionEvaluator
 from evaluators.llm_judge import LLMJudgeEvaluator
 from evaluators.answer_quality import AnswerQualityEvaluator
+from evaluators.citation import CitationEvaluator
 from adapters.mock_adapter import MockSystemAdapter
 from adapters.openrouter_adapter import OpenRouterAdapter
 from adapters.rag_adapter import RAGAdapter
@@ -84,7 +85,8 @@ def run_eval(
             evaluators.append(LLMJudgeEvaluator(judge_model=judge_model))
             evaluators.append(AbstentionEvaluator())
             evaluators.append(AnswerQualityEvaluator(judge_model=judge_model))
-            typer.echo("Detected RAG dataset. Using SourceRecallEvaluator, LLMJudgeEvaluator, AbstentionEvaluator, and AnswerQualityEvaluator.")
+            evaluators.append(CitationEvaluator(judge_model=judge_model))
+            typer.echo("Detected RAG dataset. Using SourceRecall, LLMJudge, Abstention, AnswerQuality, and Citation evaluators.")
 
         engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
         typer.echo("Starting evaluation run...")
@@ -156,7 +158,8 @@ def run_benchmark(
                 SourceRecallEvaluator(k=top_k), 
                 LLMJudgeEvaluator(judge_model=judge_model), 
                 AbstentionEvaluator(),
-                AnswerQualityEvaluator(judge_model=judge_model)
+                AnswerQualityEvaluator(judge_model=judge_model),
+                CitationEvaluator(judge_model=judge_model)
             ]
             
             engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
