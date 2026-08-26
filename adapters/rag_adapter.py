@@ -6,22 +6,29 @@ from retrieval import RetrievalEngine
 from cache import generate_cache_key, get_cached, set_cached
 
 class RAGAdapter(BaseSystemAdapter):
-    def __init__(self, model: str = "openai/gpt-4o-mini", retriever_type: str = "hybrid"):
+    def __init__(self, model: str = "openai/gpt-4o-mini", retriever_type: str = "hybrid", retrieval_config: dict = None):
         self.client = AsyncOpenAI(
             api_key=os.getenv("OPENROUTER_API_KEY"),
             base_url="https://openrouter.ai/api/v1"
         )
         self.model = model
-        self.retrieval_engine = RetrievalEngine()
         self.retriever_type = retriever_type
+        
+        # P1 Fix: Unpack retrieval config, falling back to defaults if missing
+        self.retrieval_config = retrieval_config or {}
+        embedding_model = self.retrieval_config.get("embedding_model", "openai/text-embedding-3-small")
+        self.top_k = self.retrieval_config.get("top_k", 3)
+        
+        self.retrieval_engine = RetrievalEngine(embedding_model=embedding_model)
 
-    async def retrieve(self, query: str, top_k: int = 3) -> list[dict]:
+    async def retrieve(self, query: str) -> list[dict]:
         if self.retriever_type == "dense":
-            return await self.retrieval_engine.dense_search(query, top_k)
+            return await self.retrieval_engine.dense_search(query, top_k=self.top_k)
         elif self.retriever_type == "bm25":
-            return await self.retrieval_engine.bm25_search(query, top_k)
+            # P0 Fix: Renamed method call to match the FTS rename
+            return await self.retrieval_engine.postgres_fts_search(query, top_k=self.top_k)
         elif self.retriever_type == "hybrid":
-            return await self.retrieval_engine.hybrid_search(query, top_k)
+            return await self.retrieval_engine.hybrid_search(query, top_k=self.top_k)
         else:
             raise ValueError(f"Unknown retriever type: {self.retriever_type}")
 
@@ -30,13 +37,13 @@ class RAGAdapter(BaseSystemAdapter):
         start_time = time.time()
         
         try:
-            retrieved_evidence = await self.retrieve(question, top_k=3)
+            # P1 Fix: Uses self.top_k from config
+            retrieved_evidence = await self.retrieve(question)
             context_text = "\n\n".join([f"Source: {c['source']}\nContent: {c['text']}" for c in retrieved_evidence])
             
             system_prompt = "Answer the user's question using only the provided context. If the context doesn't contain the answer, say so plainly."
             user_prompt = f"Context:\n{context_text}\n\nQuestion: {question}"
             
-            # 1. Check Cache
             cache_key = generate_cache_key(self.model, system_prompt, user_prompt)
             cached_response = await get_cached(cache_key)
             
@@ -47,7 +54,6 @@ class RAGAdapter(BaseSystemAdapter):
                 cached_response["error"] = None
                 return cached_response
 
-            # 2. Cache Miss - Call API
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -82,7 +88,6 @@ class RAGAdapter(BaseSystemAdapter):
                 "tokens_out": tokens_out
             }
 
-            # Save to cache
             await set_cached(cache_key, result_data)
 
             latency = (time.time() - start_time) * 1000

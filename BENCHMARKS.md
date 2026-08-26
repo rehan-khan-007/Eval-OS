@@ -8,8 +8,9 @@ infrastructure and real API calls — not estimates.
 | Metric | Result |
 |---|---|
 | Retrieval recall@3 (47 docs, multi-domain) | **88.9%** (Dense) |
+| Retrieval recall@5 (47 docs, multi-domain) | **91.7%** (Dense, top_k=5) |
 | Models benchmarked | 5 (gpt-4o-mini, gpt-4o, claude-haiku-4.5, gemini-3.7-flash, llama-3.1-70b) |
-| Best Faithfulness | **98.2%** (claude-haiku-4.5) |
+| Best Faithfulness | **99.0%** (gpt-4o-mini, top_k=5) |
 | Best Value (Quality/Cost) | **gpt-4o-mini** (96.8% faithfulness for $0.006) |
 | LLM Judge Human Agreement | **100.0%** (Raw Agreement on 5-sample HITL audit) |
 | Total spend across 5-model benchmark | **~$0.21** |
@@ -34,6 +35,8 @@ infrastructure and real API calls — not estimates.
    *Classifies failures into Retrieval, Generation, and System errors. Diagnoses an "overly cautious LLM" bug where the model abstains despite having the correct context.*
 8. **[Regression Testing](docs/benchmarks/08_regression_testing.md)**
    *Proves EvalOS can act as a CI/CD gate, detecting a 4.2% recall regression when switching from Dense to Hybrid retrieval.*
+9. **[Configuration-Driven Runtime](docs/benchmarks/09_config_driven_runtime.md)**
+   *Proves the database configuration drives the runtime. Increasing `top_k` to 5 dynamically changed the evaluator to `recall@5` and improved recall to 91.7%.*
 
 ---
 
@@ -53,3 +56,4 @@ The infrastructure supporting these benchmarks is verified:
 - **CLI-first:** All benchmarks are reproducible via Typer CLI
   commands, not hardcoded scripts.
 - **Redis Caching:** LLM generations and Embeddings are cached in Upstash Redis (prefixed with `evalos:`) to enable $0.00 iterative testing.
+- **Config-Driven:** The `SystemConfig` table records exact parameters (`top_k`, `embedding_model`, `retriever_type`), which are passed down to the runtime to ensure 100% reproducibility.
