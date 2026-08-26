@@ -48,7 +48,6 @@ class SystemConfig(Base):
     prompt_version: Mapped[str] = mapped_column(String, nullable=False)
     chunk_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     generation_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    # NEW: Store retrieval config (top_k, embedding_model, etc.) for strict reproducibility
     retrieval_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     runs: Mapped[list["EvaluationRun"]] = relationship(back_populates="system_config")
@@ -109,5 +108,11 @@ class HumanLabel(Base):
     metric_result_id: Mapped[str] = mapped_column(ForeignKey("metric_results.id"), nullable=False)
     execution_id: Mapped[str] = mapped_column(ForeignKey("executions.id"), nullable=False)
     agrees_with_judge: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    
+    # NEW: Rich human ratings for calibration
+    human_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    failure_category: Mapped[str | None] = mapped_column(String, nullable=True) # e.g., "retrieval_failure", "generation_failure", "none"
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     metric: Mapped["MetricResult"] = relationship(back_populates="human_labels")

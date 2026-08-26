@@ -46,28 +46,55 @@ def label_judgements(run_id: str = typer.Argument(..., help="The Run ID to label
                 typer.echo(f"  {symbol} {c.get('claim', '')} [{status}]")
             typer.echo(f"  Reasoning: {metric.explanation}")
             
-            valid_input = False
-            while not valid_input:
-                ans = typer.prompt("Is the LLM Judge verdict correct? (y/n)", default="y")
-                if ans.lower() in ["y", "n"]:
-                    valid_input = True
-                    
-            agrees = ans.lower() == "y"
-            labels_to_save.append((metric.id, exec.id, agrees))
+            # --- NEW RICH PROMPTS ---
+            
+            # Prompt for human score
+            valid_score = False
+            while not valid_score:
+                score_str = typer.prompt("Enter your independent score (0.0 to 1.0)", default="1.0")
+                try:
+                    human_score = float(score_str)
+                    if 0.0 <= human_score <= 1.0:
+                        valid_score = True
+                    else:
+                        typer.echo("Score must be between 0.0 and 1.0.")
+                except ValueError:
+                    typer.echo("Invalid number. Please enter a float (e.g., 0.5).")
+            
+            # Prompt for failure category
+            valid_cat = False
+            while not valid_cat:
+                cat = typer.prompt("Enter failure category (none, retrieval_failure, generation_failure, system_error)", default="none")
+                if cat.lower() in ["none", "retrieval_failure", "generation_failure", "system_error"]:
+                    valid_cat = True
+                    failure_category = cat.lower() if cat.lower() != "none" else None
+                else:
+                    typer.echo("Invalid category. Choose from the list.")
+            
+            # Prompt for comment
+            comment = typer.prompt("Optional: Add a brief comment (press enter to skip)", default="")
+            
+            # Derive agrees_with_judge based on score (if judge score > 0.8 and human score > 0.8, they agree)
+            agrees = abs(human_score - metric.score) < 0.2
+            
+            labels_to_save.append((metric.id, exec.id, agrees, human_score, failure_category, comment))
 
         # 3. Save to DB in a new short-lived session
         async with AsyncSessionLocal() as db:
-            for metric_id, exec_id, agrees in labels_to_save:
+            for metric_id, exec_id, agrees, h_score, f_cat, comment in labels_to_save:
                 human_label = HumanLabel(
                     id=f"hl-{uuid.uuid4().hex[:8]}",
                     metric_result_id=metric_id,
                     execution_id=exec_id,
-                    agrees_with_judge=agrees
+                    agrees_with_judge=agrees,
+                    human_score=h_score,
+                    failure_category=f_cat,
+                    comment=comment
                 )
                 db.add(human_label)
             await db.commit()
             
-        typer.echo(f"\n{'='*70}\nLabeling complete for 5 samples.\n{'='*70}")
+        typer.echo(f"\n{'='*70}\nLabeling complete for 5 samples. Rich labels saved.\n{'='*70}")
     asyncio.run(run())
 
 def calculate_agreement(run_id: str = typer.Argument(..., help="The Run ID to calculate agreement for")):
@@ -91,8 +118,8 @@ def calculate_agreement(run_id: str = typer.Argument(..., help="The Run ID to ca
             human_labels = []
             
             for metric, human in rows:
-                judge_labels.append(1 if metric.score == 1.0 else 0)
-                human_labels.append(1 if human.agrees_with_judge else 0)
+                judge_labels.append(1 if metric.score >= 0.8 else 0)
+                human_labels.append(1 if human.human_score >= 0.8 else 0)
                 
             matches = sum(1 for j, h in zip(judge_labels, human_labels) if j == h)
             raw_agreement = matches / len(rows) * 100
