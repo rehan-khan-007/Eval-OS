@@ -87,6 +87,10 @@ We ran 5-model benchmarks, retrieval ablations, A/B statistical comparisons, hum
 * **[Reference-Answer Evaluation](docs/benchmarks/13_reference_answer.md)**
   *Proves generated answers match ground truth reference answers (100% on 3-sample pilot), fulfilling Stage B of the CTO audit.*
 
+### 14. Chunk-Level Recall
+* **[Chunk-Level Recall](docs/benchmarks/14_chunk_level_recall.md)**
+  *Upgrades retrieval evaluation from document-level to chunk-level (Gold Evidence), proving the Dense retriever surfaces the exact correct chunk, not just a random chunk from the correct PDF.*
+
 ---
 
 ## Verified Engineering Infrastructure

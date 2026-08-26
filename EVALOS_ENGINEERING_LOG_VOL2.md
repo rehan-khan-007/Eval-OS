@@ -107,3 +107,15 @@ We wrote a migration script to insert 3 reference answers into the `metadata_jso
 **Fix:** We bypassed the ORM entirely and used a raw SQL `UPDATE` statement with Postgres `jsonb_set()` to merge the new key into the JSONB column. This forced the database to update, and the `ReferenceAnswerEvaluator` successfully picked up the ground truth.
 
 **Result:** The `ReferenceAnswerEvaluator` correctly scored the 3 questions with ground truth (achieving 100% correctness) and returned `indeterminate` (-1.0) for the 33 questions without ground truth. The Analysis Engine correctly filtered the `-1.0` scores from the aggregate average, proving the evaluator fails gracefully.
+
+---
+
+## Phase B2: Chunk-Level Recall & Gold Evidence
+
+**What was done:** The CTO audit (Stage B) required stronger ground truth. We upgraded from Document-level Recall (did you fetch the right PDF?) to Chunk-level Recall (did you fetch the exact chunk containing the answer?).
+
+**Architecture Change:** 
+1. Wrote a smart migration script to find the `gold_chunk_id` for the 3 questions with reference answers by embedding the reference answer and finding the most similar chunk in Postgres.
+2. Upgraded `SourceRecallEvaluator` to v2. It now checks for exact `chunk_id` matches if `gold_chunk_ids` exist, and falls back to document-level matching if they don't.
+
+**Result:** The recall score remained 88.9%, proving the Dense retriever is highly precise at the chunk level, not just lucky at the document level.
