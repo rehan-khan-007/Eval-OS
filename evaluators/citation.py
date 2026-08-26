@@ -16,7 +16,6 @@ class CitationEvaluator(BaseEvaluator):
 
     async def evaluate(self, input_data, system_output, retrieved_evidence):
         answer = system_output.get("answer", "")
-        # We format the context so the Judge knows exactly what text belongs to which source
         context_text = "\n\n".join([f"[{c['source']}]: {c['text']}" for c in retrieved_evidence])
         
         if not answer or not context_text:
@@ -42,7 +41,8 @@ Respond with ONLY a JSON object, no other text:
   "reasoning": "one brief sentence summarizing citation quality"
 }}"""
         
-        cache_key = generate_cache_key("citation", self.judge_model, context_text, answer)
+        # P1 Fix: Include evaluator name and version in cache key
+        cache_key = generate_cache_key(self.name, self.version, self.judge_model, context_text, answer)
         cached_verdict = await get_cached(cache_key)
         if cached_verdict:
             return cached_verdict
