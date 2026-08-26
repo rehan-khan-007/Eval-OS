@@ -74,3 +74,23 @@ A rigorous, honest log of the architecture decisions, bugs found, and real resul
 2. Created a `CitationEvaluator` that prompts the LLM Judge to extract claims, identify their attached citations, and verify if the text from the *specifically cited document* supports the claim.
 
 **Result:** EvalOS measured a 100.0% citation correctness score. The LLM correctly attributed claims to the exact supporting documents. Forcing citations caused a slight drop in general Faithfulness (96.8% -> 95.0%), a known trade-off when forcing structured output.
+
+---
+
+## Phase Q7: Stage A Hardening (README & Cache Versioning)
+
+**What was done:** A second CTO audit caught terminology and accuracy issues in the README, as well as a cache-key vulnerability.
+
+**Fixes:**
+1. **README Terminology:** Changed "BM25" to "PostgreSQL FTS" because `ts_rank` is not the BM25 algorithm. Changed "17x" to "~15x" to match actual data. Removed "hundreds of concurrent API calls" overclaim. Renamed "Zero-Cost Iteration" to "Cached Iteration".
+2. **Version-Aware Cache:** Added `self.name` and `self.version` to the cache keys in all evaluators. If an evaluator prompt changes (e.g., `faithfulness:v1` to `v2`), the cache will automatically bust. Added a unit test to verify this.
+
+---
+
+## Phase Q8: Statistical Regression Engine
+
+**What was done:** The audit noted the regression engine was purely threshold-based and not statistically grounded. 
+
+**Architecture Change:** Updated `analysis/regression.py` to call the `compare_runs` statistical engine. A metric is only flagged as a regression if it drops by the threshold AND the 95% Confidence Interval excludes zero.
+
+**Result:** EvalOS successfully prevented a false positive. The 4.2% recall drop between Dense and Hybrid was ignored because it wasn't statistically significant. The 2.4-second latency increase was flagged as a significant regression, correctly blocking the deployment.

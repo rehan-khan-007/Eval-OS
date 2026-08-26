@@ -16,20 +16,28 @@ def regression_check(
 
         typer.echo("=" * 50)
         typer.echo(f"Regression Check: {baseline_run_id} (Baseline) vs {new_run_id} (New)")
-        typer.echo(f"Threshold: {threshold*100:.1f}%")
+        typer.echo(f"Threshold: {threshold*100:.1f}% AND 95% CI excludes zero")
         typer.echo("=" * 50)
 
         typer.echo("\nImprovements:")
         if data["improvements"]:
             for imp in data["improvements"]:
-                typer.echo(f"  ✓ {imp['metric']}: {imp['baseline']*100:.1f}% -> {imp['new']*100:.1f}% (+{imp['diff']*100:.1f}%)")
+                sig_str = "Significant" if imp.get("is_significant") else "Not Significant"
+                if imp['metric'] == "latency_avg_ms":
+                    typer.echo(f"  ✓ {imp['metric']}: {imp['baseline']:.1f}ms -> {imp['new']:.1f}ms (+{imp['diff']:.1f}ms) [{sig_str}]")
+                else:
+                    typer.echo(f"  ✓ {imp['metric']}: {imp['baseline']*100:.1f}% -> {imp['new']*100:.1f}% (+{imp['diff']*100:.1f}%) [{sig_str}]")
         else:
             typer.echo("  None")
 
         typer.echo("\nRegressions:")
         if data["regressions"]:
             for reg in data["regressions"]:
-                typer.echo(f"  ✗ {reg['metric']}: {reg['baseline']*100:.1f}% -> {reg['new']*100:.1f}% ({reg['diff']*100:.1f}%)")
+                sig_str = "Significant" if reg.get("is_significant") else "Not Significant"
+                if reg['metric'] == "latency_avg_ms":
+                    typer.echo(f"  ✗ {reg['metric']}: {reg['baseline']:.1f}ms -> {reg['new']:.1f}ms ({reg['diff']:.1f}ms) [{sig_str}]")
+                else:
+                    typer.echo(f"  ✗ {reg['metric']}: {reg['baseline']*100:.1f}% -> {reg['new']*100:.1f}% ({reg['diff']*100:.1f}%) [{sig_str}]")
         else:
             typer.echo("  None")
 

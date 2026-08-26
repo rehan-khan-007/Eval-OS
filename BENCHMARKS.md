@@ -11,8 +11,8 @@ EvalOS was used to evaluate a RAG pipeline over a 47-document, multi-domain corp
 We ran 5-model benchmarks, retrieval ablations, A/B statistical comparisons, human-in-the-loop (HITL) calibration, failure diagnosis, and regression testing. 
 
 ### Key Findings
-1. **The "Expensive Model" Trap:** `gpt-4o` costs 17x more than `gpt-4o-mini`, but actually scored *lower* in faithfulness (hallucinated more) on the same RAG task. `gpt-4o-mini` is the undisputed value champion.
-2. **The "Hybrid is Always Better" Myth:** EvalOS proved that Hybrid retrieval (BM25 + Dense + RRF) actually *regressed* recall by 4 points compared to Dense-only, because BM25 introduced noise on PDF-extracted text.
+1. **The "Expensive Model" Trap:** `gpt-4o` costs ~15x more than `gpt-4o-mini`, but actually scored *lower* in faithfulness (hallucinated more) on the same RAG task. `gpt-4o-mini` is the undisputed value champion.
+2. **The "Hybrid is Always Better" Myth:** EvalOS observed that Hybrid retrieval (Postgres FTS + Dense + RRF) actually *regressed* recall by 4 points compared to Dense-only, because FTS introduced noise on PDF-extracted text.
 3. **Groundedness != Completeness:** EvalOS proved the system scores 96.8% on Faithfulness (not hallucinating) but only 82.6% on Answer Quality (incomplete answers).
 4. **Citation Correctness:** When forced to cite sources, `gpt-4o-mini` achieved 100% citation correctness—every claim was mathematically verified to be supported by the exact document it cited.
 5. **The "Overly Cautious LLM" Bug:** Failure diagnosis revealed the LLM abstained unnecessarily on 6 questions despite having the correct context (100% faithfulness, 0% abstention accuracy).
@@ -56,7 +56,7 @@ We ran 5-model benchmarks, retrieval ablations, A/B statistical comparisons, hum
 
 ### 6. System Engineering
 * **[Evaluation Caching & Cost Efficiency](docs/benchmarks/06_caching_efficiency.md)**
-  *Proves iterative benchmarking is free: a cached re-run of the 36-question dataset costs $0.00 and finishes in seconds.*
+  *Proves iterative benchmarking is cached: a re-run of the 36-question dataset eliminates duplicate LLM inference cost and finishes in seconds.*
 
 ### 7. Failure Analysis
 * **[Failure Diagnosis Taxonomy](docs/benchmarks/07_failure_diagnosis.md)**
@@ -78,6 +78,10 @@ We ran 5-model benchmarks, retrieval ablations, A/B statistical comparisons, hum
 * **[Citation Correctness](docs/benchmarks/11_citation_correctness.md)**
   *Proves citations actually support the claims they are attached to (100% citation correctness), fulfilling Section 12 of the spec.*
 
+### 12. Statistical Regression
+* **[Statistical Regression Testing](docs/benchmarks/12_statistical_regression.md)**
+  *Proves EvalOS blocks deployments based on statistical evidence, correctly ignoring a 4.2% recall drop (noise) but flagging a 2.4s latency increase (significant).*
+
 ---
 
 ## Verified Engineering Infrastructure
@@ -87,6 +91,6 @@ EvalOS itself was built to be a reproducible evaluation framework. The infrastru
 - **Postgres + pgvector:** All runs, metrics, traces, and vector embeddings are stored in a single Neon Postgres instance. This allows complex SQL joins for failure analysis (e.g., joining `executions` with `metric_results` to find exactly *why* a retrieval failed).
 - **Asynchronous by design:** All API calls (OpenRouter generation and embeddings) use `asyncpg` and `AsyncOpenAI` to prevent I/O bottlenecks during large-scale evaluation runs.
 - **CLI-first:** All benchmarks are reproducible via Typer CLI commands, not hardcoded scripts.
-- **Redis Caching:** LLM generations and Embeddings are cached in Upstash Redis (prefixed with `evalos:`) to enable $0.00 iterative testing.
+- **Redis Caching:** LLM generations and Embeddings are cached in Upstash Redis (prefixed with `evalos:`) to enable cached iteration. Cache keys are version-aware (evaluator name + version).
 - **Config-Driven:** The `SystemConfig` table records exact parameters (`top_k`, `embedding_model`, `retriever_type`), which are passed down to the runtime to ensure 100% reproducibility.
-- **Testable Core:** Pure logic (RRF fusion, Cache Keys) is extracted into pure functions and tested with `pytest` (5/5 tests passing).
+- **Testable Core:** Pure logic (RRF fusion, Cache Keys) is extracted into pure functions and tested with `pytest` (6/6 tests passing).
