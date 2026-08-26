@@ -27,6 +27,7 @@ We ran 5-model benchmarks, retrieval ablations, A/B statistical comparisons, hum
 | Best Faithfulness (Groundedness) | **96.8%** (`gpt-4o-mini`) |
 | Answer Quality (Correctness + Completeness) | **82.6%** (`gpt-4o-mini`) |
 | Citation Correctness | **100.0%** (`gpt-4o-mini`) |
+| Reference Correctness (Ground Truth) | **100.0%** (3-sample pilot) |
 | LLM Judge Human Agreement | **100.0%** (Raw Agreement on HITL audit) |
 | Total Spend for 5-Model Benchmark | **~$0.21** |
 
@@ -81,6 +82,10 @@ We ran 5-model benchmarks, retrieval ablations, A/B statistical comparisons, hum
 ### 12. Statistical Regression
 * **[Statistical Regression Testing](docs/benchmarks/12_statistical_regression.md)**
   *Proves EvalOS blocks deployments based on statistical evidence, correctly ignoring a 4.2% recall drop (noise) but flagging a 2.4s latency increase (significant).*
+
+### 13. Reference-Answer Evaluation
+* **[Reference-Answer Evaluation](docs/benchmarks/13_reference_answer.md)**
+  *Proves generated answers match ground truth reference answers (100% on 3-sample pilot), fulfilling Stage B of the CTO audit.*
 
 ---
 

@@ -6,6 +6,7 @@ from evaluators.deterministic import ToolSelectionEvaluator, SourceRecallEvaluat
 from evaluators.llm_judge import LLMJudgeEvaluator
 from evaluators.answer_quality import AnswerQualityEvaluator
 from evaluators.citation import CitationEvaluator
+from evaluators.reference_answer import ReferenceAnswerEvaluator
 from adapters.mock_adapter import MockSystemAdapter
 from adapters.openrouter_adapter import OpenRouterAdapter
 from adapters.rag_adapter import RAGAdapter
@@ -35,7 +36,7 @@ def run_eval(
             examples = [{
                 "id": ex.id,
                 "question": ex.question,
-                "metadata": ex.metadata_json
+                "metadata": ex.metadata_json or {}
             } for ex in db_examples]
 
             sys_config_id = f"cfg-{config_name.lower().replace(' ', '-')}"
@@ -86,7 +87,8 @@ def run_eval(
             evaluators.append(AbstentionEvaluator())
             evaluators.append(AnswerQualityEvaluator(judge_model=judge_model))
             evaluators.append(CitationEvaluator(judge_model=judge_model))
-            typer.echo("Detected RAG dataset. Using SourceRecall, LLMJudge, Abstention, AnswerQuality, and Citation evaluators.")
+            evaluators.append(ReferenceAnswerEvaluator(judge_model=judge_model))
+            typer.echo("Detected RAG dataset. Using SourceRecall, LLMJudge, Abstention, AnswerQuality, Citation, and ReferenceAnswer evaluators.")
 
         engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
         typer.echo("Starting evaluation run...")
@@ -116,7 +118,7 @@ def run_benchmark(
             examples = [{
                 "id": ex.id,
                 "question": ex.question,
-                "metadata": ex.metadata_json
+                "metadata": ex.metadata_json or {}
             } for ex in db_examples]
 
         model_list = [m.strip() for m in models.split(",")]
@@ -159,7 +161,8 @@ def run_benchmark(
                 LLMJudgeEvaluator(judge_model=judge_model), 
                 AbstentionEvaluator(),
                 AnswerQualityEvaluator(judge_model=judge_model),
-                CitationEvaluator(judge_model=judge_model)
+                CitationEvaluator(judge_model=judge_model),
+                ReferenceAnswerEvaluator(judge_model=judge_model)
             ]
             
             engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
