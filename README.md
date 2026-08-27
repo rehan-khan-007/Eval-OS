@@ -104,9 +104,9 @@ Eval-OS/
 
 We don't just claim EvalOS works; we use it to generate real, documented results.
 
-*   📄 **[Executive Benchmark Summary](BENCHMARKS.md)** - The "At a glance" table and links to deep dives.
+*   📄 **[Executive Benchmark Summary](docs/BENCHMARKS.md)** - The "At a glance" table and links to deep dives.
 *   🔬 **[Deep Dive: 5-Model RAG Benchmark](docs/benchmarks/01_model_comparison.md)** - Proves gpt-4o-mini beats gpt-4o in faithfulness while being 15x cheaper.
-*   🐛 **[Engineering Log Vol 1](EVALOS_ENGINEERING_LOG.md)** & **[Vol 2](EVALOS_ENGINEERING_LOG_VOL2.md)** - An honest record of the architecture decisions, async bugs found, and fixes applied during development.
+*   🐛 **[Engineering Log Vol 1](docs/EVALOS_ENGINEERING_LOG.md)** & **[Vol 2](docs/EVALOS_ENGINEERING_LOG_VOL2.md)** - An honest record of the architecture decisions, async bugs found, and fixes applied during development.
 *   📄 **[Project Context & Handoff](PROJECT_CONTEXT.md)** - A comprehensive CTO-level architectural audit and handoff document.
 
 ---
