@@ -80,6 +80,3 @@ class SaveCandidateResponse(BaseModel):
 
 class SliceSchema(BaseModel):
     slices: dict
-
-class SliceSchema(BaseModel):
-    slices: dict
