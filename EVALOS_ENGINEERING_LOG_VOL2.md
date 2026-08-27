@@ -301,3 +301,16 @@ During the infrastructure upgrades in Stage C, we encountered and fixed several 
 6.  **Test Expansion:** Added 404 API test and updated RunEngine isolation test to verify error sanitization.
 
 **Result:** EvalOS is now 100% compliant with the CTO audit. 25/25 tests pass. The project is officially frozen at v1.0.0.
+
+---
+
+## FA Phase 8: The Final Closure
+
+**What was done:** The absolute final CTO audit required 3 minor cleanup items before permanent freeze.
+
+**Architecture Change:**
+1. **Dynamic Metric Inference:** Updated `analysis/statistics.py` `compare_runs()` to default to `metric_name=None` and automatically infer the `source_recall@K` metric from the database, removing the last hardcoded `@3` assumption.
+2. **Scientific README Wording:** Fixed the semaphore overclaim ("without hitting API rate limits" -> "reducing rate-limit pressure") and the regression wording ("regressed recall" -> "observed lower recall") to perfectly match the `INCONCLUSIVE` statistical verdict.
+3. **True Integration Test:** Added `test_execute_run_with_errors` to `tests/test_run_engine.py`. It mocks the DB session and verifies that `RunEngine.execute_run()` correctly persists 3 executions, calculates total cost, and sets the final `EvaluationRun.status` to `complete_with_errors` when an adapter exception occurs.
+
+**Result:** EvalOS is 100% compliant with the CTO audit. 26/26 tests pass. The project is officially frozen at v1.0.0.
