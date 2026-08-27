@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 import asyncio
+import subprocess
+import os
 from database import AsyncSessionLocal
 from models import SystemConfig, EvaluationRun, Execution, MetricResult
 
@@ -12,23 +14,35 @@ class RunEngine:
         self.evaluators = evaluators
         self.semaphore = asyncio.Semaphore(concurrency)
 
-    async def _process_single_example(self, ex: dict, run_id: str) -> tuple:
-        """Processes a single example, bounded by the semaphore."""
-        async with self.semaphore:
-            # 1. Execute system (API call) - NO DB SESSION HELD
-            sys_output = await self.system_adapter.generate(ex)
+    def _get_provenance(self) -> dict:
+        """Capture current code SHA and dependency lock for reproducibility."""
+        code_sha = "unknown"
+        try:
+            code_sha = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode()
+        except Exception:
+            pass
             
-            # 2. Execute evaluators (API calls) - NO DB SESSION HELD
+        dep_lock = "unknown"
+        try:
+            with open("requirements.txt", "r") as f:
+                dep_lock = f.read()
+        except Exception:
+            pass
+            
+        return {"code_sha": code_sha, "dependency_lock": dep_lock}
+
+    async def _process_single_example(self, ex: dict, run_id: str) -> tuple:
+        async with self.semaphore:
+            sys_output = await self.system_adapter.generate(ex)
             metric_results = []
             for evaluator in self.evaluators:
                 result = await evaluator.evaluate(ex, sys_output, sys_output.get("retrieved_evidence", []))
                 metric_results.append((evaluator, result))
-                
-            # Return data to be saved by the main loop
             return (ex, sys_output, metric_results)
 
     async def execute_run(self, dataset_version_id: str, examples: list) -> str:
-        # 1. Create the EvaluationRun
+        provenance = self._get_provenance()
+        
         async with AsyncSessionLocal() as db:
             run_id = f"run-{uuid.uuid4().hex[:8]}"
             run = EvaluationRun(
@@ -36,16 +50,16 @@ class RunEngine:
                 system_config_id=self.sys_config_id,
                 dataset_version_id=dataset_version_id,
                 status="running",
-                started_at=datetime.now(timezone.utc)
+                started_at=datetime.now(timezone.utc),
+                code_sha=provenance["code_sha"],
+                dependency_lock=provenance["dependency_lock"]
             )
             db.add(run)
             await db.commit()
 
-        # 2. Launch all tasks concurrently (bounded by semaphore)
         tasks = [self._process_single_example(ex, run_id) for ex in examples]
         results = await asyncio.gather(*tasks)
         
-        # 3. Save results sequentially in a fast DB loop
         total_cost = 0.0
         async with AsyncSessionLocal() as db:
             for ex, sys_output, metric_results in results:
@@ -79,10 +93,8 @@ class RunEngine:
                     )
                     db.add(metric)
                 
-                # Commit periodically to avoid huge memory spikes, but this is fast since no API calls are here
                 await db.commit()
 
-        # 4. Finalize run
         async with AsyncSessionLocal() as db:
             run = await db.get(EvaluationRun, run_id)
             run.status = "complete"
