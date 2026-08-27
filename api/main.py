@@ -6,7 +6,10 @@ from analysis_engine import AnalysisEngine
 from adapters.rag_adapter import RAGAdapter
 from evaluators.llm_judge import LLMJudgeEvaluator
 from sqlalchemy import select
-import uuid
+from api.schemas import (
+    ExperimentSchema, ExperimentDetailSchema, RunSummarySchema,
+    RunMetricsSchema, DiagnosisSchema, PlaygroundResponseSchema
+)
 
 app = FastAPI(
     title="EvalOS API",
@@ -22,22 +25,15 @@ async def root():
 async def health_check():
     return {"status": "healthy", "service": "EvalOS API"}
 
-@app.get("/api/experiments")
+@app.get("/api/experiments", response_model=list[ExperimentSchema])
 async def list_experiments():
     async with AsyncSessionLocal() as db:
         stmt = select(Experiment).order_by(Experiment.created_at.desc())
         result = await db.execute(stmt)
         exps = result.scalars().all()
-        return [
-            {
-                "id": e.id, 
-                "name": e.name, 
-                "description": e.description,
-                "created_at": e.created_at.isoformat()
-            } for e in exps
-        ]
+        return exps
 
-@app.get("/api/experiments/{exp_id}")
+@app.get("/api/experiments/{exp_id}", response_model=ExperimentDetailSchema)
 async def get_experiment(exp_id: str):
     async with AsyncSessionLocal() as db:
         exp = await db.get(Experiment, exp_id)
@@ -57,25 +53,25 @@ async def get_experiment(exp_id: str):
                 "model": sys_config.model if sys_config else "Unknown",
                 "status": r.status,
                 "total_cost": r.total_cost,
-                "started_at": r.started_at.isoformat()
+                "started_at": r.started_at
             })
             
         return {
             "id": exp.id,
             "name": exp.name,
             "description": exp.description,
-            "created_at": exp.created_at.isoformat(),
+            "created_at": exp.created_at,
             "runs": runs_data
         }
 
-@app.get("/api/runs/{run_id}")
+@app.get("/api/runs/{run_id}", response_model=RunMetricsSchema)
 async def get_run(run_id: str):
     data = await AnalysisEngine.analyze_run(run_id)
     if not data:
         raise HTTPException(status_code=404, detail="Run not found")
     return data
 
-@app.get("/api/runs/{run_id}/diagnose")
+@app.get("/api/runs/{run_id}/diagnose", response_model=DiagnosisSchema)
 async def diagnose_run(run_id: str):
     data = await AnalysisEngine.diagnose_run(run_id)
     if not data:
@@ -91,7 +87,7 @@ async def slice_run(run_id: str, slice_field: str):
         raise HTTPException(status_code=404, detail="Run not found or no data")
     return data
 
-# --- NEW: INTERACTIVE PLAYGROUND ENDPOINT ---
+# --- INTERACTIVE PLAYGROUND ---
 
 class PlaygroundRequest(BaseModel):
     api_key: str
@@ -99,11 +95,10 @@ class PlaygroundRequest(BaseModel):
     model: str = "openai/gpt-4o-mini"
     judge_model: str = "openai/gpt-4o-mini"
 
-@app.post("/api/playground")
+@app.post("/api/playground", response_model=PlaygroundResponseSchema)
 async def playground(req: PlaygroundRequest):
     """Runs a live RAG + Evaluation pipeline using the user's API key."""
     try:
-        # 1. Initialize adapters with the user's key
         adapter = RAGAdapter(
             model=req.model, 
             retriever_type="hybrid", 
@@ -112,14 +107,12 @@ async def playground(req: PlaygroundRequest):
         )
         judge = LLMJudgeEvaluator(judge_model=req.judge_model, api_key=req.api_key)
 
-        # 2. Run generation
         input_data = {"question": req.question, "metadata": {}}
         sys_output = await adapter.generate(input_data)
 
         if sys_output.get("error"):
             return {"error": sys_output["error"]}
 
-        # 3. Run evaluation
         judge_result = await judge.evaluate(input_data, sys_output, sys_output.get("retrieved_evidence", []))
 
         return {
@@ -130,4 +123,5 @@ async def playground(req: PlaygroundRequest):
             "judge": judge_result
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # P0 Security Fix: Do not return raw exception strings in production
+        raise HTTPException(status_code=500, detail="Internal Server Error. Check server logs.")

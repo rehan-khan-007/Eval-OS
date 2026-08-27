@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 import asyncio
 import subprocess
 import os
+import hashlib
+import json
 from database import AsyncSessionLocal
 from models import SystemConfig, EvaluationRun, Execution, MetricResult
 
@@ -15,8 +17,7 @@ class RunEngine:
         self.semaphore = asyncio.Semaphore(concurrency)
         self.experiment_id = experiment_id
 
-    def _get_provenance(self) -> dict:
-        """Capture current code SHA and dependency lock for reproducibility."""
+    def _get_provenance(self, dataset_version_id: str) -> dict:
         code_sha = "unknown"
         try:
             code_sha = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode()
@@ -30,7 +31,20 @@ class RunEngine:
         except Exception:
             pass
             
-        return {"code_sha": code_sha, "dependency_lock": dep_lock}
+        # Construct Canonical Fingerprint
+        evaluator_suite = sorted([f"{e.name}:{e.version}" for e in self.evaluators])
+        config_data = {
+            "code_sha": code_sha,
+            "dataset_version_id": dataset_version_id,
+            "system_config_id": self.sys_config_id,
+            "evaluator_suite": evaluator_suite,
+            "dependency_lock": dep_lock
+        }
+        # Canonical JSON serialization (sort_keys=True)
+        canonical_str = json.dumps(config_data, sort_keys=True)
+        fingerprint = hashlib.sha256(canonical_str.encode()).hexdigest()
+            
+        return {"code_sha": code_sha, "dependency_lock": dep_lock, "fingerprint": fingerprint}
 
     async def _process_single_example(self, ex: dict, run_id: str) -> tuple:
         async with self.semaphore:
@@ -42,7 +56,7 @@ class RunEngine:
             return (ex, sys_output, metric_results)
 
     async def execute_run(self, dataset_version_id: str, examples: list) -> str:
-        provenance = self._get_provenance()
+        provenance = self._get_provenance(dataset_version_id)
         
         async with AsyncSessionLocal() as db:
             run_id = f"run-{uuid.uuid4().hex[:8]}"
@@ -54,6 +68,7 @@ class RunEngine:
                 started_at=datetime.now(timezone.utc),
                 code_sha=provenance["code_sha"],
                 dependency_lock=provenance["dependency_lock"],
+                run_fingerprint=provenance["fingerprint"],
                 experiment_id=self.experiment_id
             )
             db.add(run)

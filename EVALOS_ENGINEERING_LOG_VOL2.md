@@ -223,3 +223,18 @@ During the infrastructure upgrades in Stage C, we encountered and fixed several 
 4. Updated the CLI to output the full scientific breakdown: `Δ`, `95% CI`, `N`, and the `Verdict`.
 
 **Result:** EvalOS successfully re-evaluated the Dense vs. Hybrid run. The 4.2% recall drop was correctly flagged as `INCONCLUSIVE` (CI touched 0.0), while the latency increase was flagged as `REGRESSION`. The engine is now scientifically valid.
+
+---
+
+## FA Phase 2: Contracts & Provenance (Immutable Configs & Fingerprinting)
+
+**What was done:** The CTO audit (Final Audit Phase 2) required strict API contracts and cryptographic provenance. The API was returning raw dictionaries, and runs lacked a unified fingerprint for reproducibility verification.
+
+**Architecture Change:**
+1. Created `api/schemas.py` with Pydantic response models (`RunMetricsSchema`, `ExperimentDetailSchema`, `PlaygroundResponseSchema`, etc.) to enforce strict, typed API contracts.
+2. Applied response models to all FastAPI endpoints, fixing the OpenAPI/Swagger documentation and guaranteeing frontend stability.
+3. Added `run_fingerprint` column to `EvaluationRun` via Alembic migration.
+4. Updated `RunEngine` to generate a SHA256 fingerprint using canonical JSON serialization (sort_keys=True) of: `code_sha`, `dataset_version_id`, `system_config_id`, `evaluator_suite`, and `dependency_lock`.
+5. Secured the Playground endpoint by replacing raw exception strings with generic "Internal Server Error" responses (P0 security fix).
+
+**Result:** EvalOS now records a cryptographic fingerprint of the evaluation configuration for every run. The API is professionally typed and safe from information disclosure.
