@@ -1,4 +1,4 @@
-# EvalOS — Project Context & Engineering Handoff
+content = '''# EvalOS — Project Context & Engineering Handoff
 
 ## 1. Executive Summary
 EvalOS is an advanced research prototype for evaluating AI/RAG systems. The repository contains a functioning evaluation pipeline spanning dataset execution, retrieval evaluation, LLM-based evaluation, HITL calibration, statistical comparison, regression detection, caching, and CLI tooling. However, several areas remain research- or prototype-grade, particularly ground-truth coverage, benchmark isolation, test coverage, migration discipline, concurrency, and experiment provenance. 
@@ -262,3 +262,9 @@ EvalOS evaluates AgentOS traces. Not implemented yet. EvalOS must not become an 
 | 100% Reference Correctness | 3 | v1 | benchmark | YES | YES | NO (N=3 pilot) | LOW |
 | Judge is 13.2% lenient | 5 | v1 | benchmark | YES | YES | NO (N=5 pilot) | LOW |
 | Regression gate works | 36 | v1 | benchmark | YES | YES | YES | HIGH |
+'''
+
+with open("PROJECT_CONTEXT.md", "w") as f:
+    f.write(content)
+
+print("PROJECT_CONTEXT.md generated successfully with CTO corrections!")
