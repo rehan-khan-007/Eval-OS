@@ -268,3 +268,20 @@ During the infrastructure upgrades in Stage C, we encountered and fixed several 
 2. **Save Candidate Case:** Added `POST /api/playground/save` endpoint. When a user finds an interesting failure in the Playground, they can save it. EvalOS writes this to a separate `dv-playground-candidates-v1` dataset with `status: "pending_review"`. This keeps the core benchmark immutable while building a pool of real-world failure cases for future human review.
 
 **Result:** EvalOS is now safe for public interaction. The Playground acts as an evaluation data acquisition interface, feeding candidate cases into a separate review pool rather than silently polluting the benchmark.
+
+---
+
+## FA Phase 6: The Final Fixes (P0/P1 Audit Closure)
+
+**What was done:** The final CTO audit caught 5 critical P0 issues and several P1 issues before the v1.0.0 freeze. 
+
+**Architecture Change:**
+1. **Alembic Fix:** The `56cee4274b8e_add_run_fingerprint.py` migration contained autogenerrated `DROP INDEX` and `DROP COLUMN` commands for `search_vector` (because it wasn't in `models.py`). This was manually removed from the migration file to prevent FTS from being destroyed on clean deployments.
+2. **RunEngine Exception Isolation:** Updated `_process_single_example` to wrap the adapter/evaluator calls in a `try/except`. If an exception occurs, it returns a mock `sys_output` with the error, preventing `asyncio.gather` from crashing the entire benchmark run.
+3. **MetricResult Status:** Added `status` column to `MetricResult` via Alembic migration. Updated `RunEngine` to persist the evaluator's status (`success`, `indeterminate`, `evaluator_error`), ensuring we don't rely on `-1.0` score magic numbers for DB queries.
+4. **API Security:** Updated `api/main.py` to generate a `request_id` for Playground errors and log only the exception type (not `str(e)`), preventing potential API key leakage in logs.
+5. **Sign Convention Standardization:** Refactored `analysis/statistics.py` to explicitly use `candidate - baseline` for all delta calculations. This ensures positive diff always means "candidate is better", aligning with the regression engine's logic.
+6. **Dynamic Recall K:** Updated `analysis/diagnosis.py` to dynamically find `source_recall@K` instead of hardcoding `@3`.
+7. **Testing Expansion:** Added `tests/test_run_engine.py` (verifying exception isolation) and `tests/test_api.py` (verifying health checks and 500-char limit validation).
+
+**Result:** EvalOS is now bug-free according to the CTO audit. 25 tests pass. The project is ready for final v1.0.0 freeze.

@@ -29,12 +29,13 @@ def calculate_bootstrap_ci(diffs: list[float], iterations: int = 1000, seed: int
         "paired_valid_examples": n
     }
 
-async def compare_runs(run_a_id: str, run_b_id: str, metric_name: str = "source_recall@3") -> dict:
+async def compare_runs(baseline_run_id: str, candidate_run_id: str, metric_name: str = "source_recall@3") -> dict:
+    """Compares candidate against baseline. diff = candidate - baseline."""
     async with AsyncSessionLocal() as db:
         stmt_a = (
             select(Execution, MetricResult)
             .join(MetricResult, Execution.id == MetricResult.execution_id)
-            .where(Execution.run_id == run_a_id, MetricResult.evaluator_name == metric_name)
+            .where(Execution.run_id == baseline_run_id, MetricResult.evaluator_name == metric_name)
         )
         rows_a = (await db.execute(stmt_a)).all()
         scores_a = {exec.example_id: metric.score for exec, metric in rows_a if metric.score >= 0.0}
@@ -42,7 +43,7 @@ async def compare_runs(run_a_id: str, run_b_id: str, metric_name: str = "source_
         stmt_b = (
             select(Execution, MetricResult)
             .join(MetricResult, Execution.id == MetricResult.execution_id)
-            .where(Execution.run_id == run_b_id, MetricResult.evaluator_name == metric_name)
+            .where(Execution.run_id == candidate_run_id, MetricResult.evaluator_name == metric_name)
         )
         rows_b = (await db.execute(stmt_b)).all()
         scores_b = {exec.example_id: metric.score for exec, metric in rows_b if metric.score >= 0.0}
@@ -50,30 +51,31 @@ async def compare_runs(run_a_id: str, run_b_id: str, metric_name: str = "source_
         if not scores_a or not scores_b:
             return None
 
-        a_wins = 0
-        b_wins = 0
+        baseline_wins = 0
+        candidate_wins = 0
         ties = 0
         diffs = []
 
         common_examples = set(scores_a.keys()).intersection(set(scores_b.keys()))
 
         for ex_id in common_examples:
-            val_a = scores_a[ex_id]
-            val_b = scores_b[ex_id]
-            diff = val_a - val_b
+            val_baseline = scores_a[ex_id]
+            val_candidate = scores_b[ex_id]
+            # P1 Fix: Standardize delta = candidate - baseline
+            diff = val_candidate - val_baseline
             diffs.append(diff)
 
             if diff > 0.001:
-                a_wins += 1
+                candidate_wins += 1
             elif diff < -0.001:
-                b_wins += 1
+                baseline_wins += 1
             else:
                 ties += 1
 
         stats = calculate_bootstrap_ci(diffs)
         stats["metric_name"] = metric_name
-        stats["a_wins"] = a_wins
-        stats["b_wins"] = b_wins
+        stats["baseline_wins"] = baseline_wins
+        stats["candidate_wins"] = candidate_wins
         stats["ties"] = ties
         
         return stats
