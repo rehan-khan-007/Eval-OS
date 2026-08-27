@@ -11,8 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Expose the port (Render uses $PORT env var, but we expose 8000 for local)
-EXPOSE 8000
+# Expose the port (Render uses $PORT env var)
+EXPOSE $PORT
 
-# Run the FastAPI server
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the FastAPI server using Render's dynamic PORT
+CMD uvicorn api.main:app --host 0.0.0.0 --port $PORT
