@@ -155,3 +155,43 @@ We wrote a migration script to insert 3 reference answers into the `metadata_jso
 3. Updated `RunEngine` to capture the current Git commit SHA and `requirements.txt` content at the start of every run and persist them to the database.
 
 **Result:** EvalOS now stores the exact code and dependency state for every run. The P0 Provenance Gap is officially closed.
+
+---
+
+## Phase C4: The Experiment Abstraction
+
+**What was done:** The CTO audit (Stage C) required an `Experiment` abstraction to group multiple `EvaluationRun`s (e.g., a 5-model benchmark) under a single umbrella. 
+
+**Architecture Change:**
+1. Added the `experiments` table to the database via Alembic.
+2. Updated `RunEngine` to accept an optional `experiment_id` and link the run to it.
+3. Updated the `run_benchmark` CLI command to automatically create an `Experiment` and pass its ID down to all runs in the benchmark loop.
+4. Created the `inspect-experiment` CLI command to view all runs grouped under an experiment, including their provenance data.
+
+**Result:** EvalOS now tracks experiments as first-class entities. A 5-model benchmark is no longer 5 disconnected run IDs; it is a single experiment with 5 runs, all sharing the same timestamp, dataset, and experiment metadata, while individually preserving their specific `code_sha` and `dependency_lock`.
+
+---
+
+## Stage C: Bug History & Fixes
+
+During the infrastructure upgrades in Stage C, we encountered and fixed several integration bugs:
+
+1. **Missing `experiment_id` in RunEngine (TypeError):**
+   * **Symptom:** `run-benchmark` crashed with `TypeError: RunEngine.__init__() got an unexpected keyword argument 'experiment_id'`.
+   * **Root Cause:** The CLI command was updated to pass `experiment_id` before the `run_engine.py` file was actually overwritten with the new constructor parameter.
+   * **Fix:** Applied the missing `run_engine.py` update to accept and persist the `experiment_id`.
+
+2. **macOS `sed` Syntax Error (Bad Flag in Substitute):**
+   * **Symptom:** `sed -i '' 's|...|...|'` failed with `bad flag in substitute command: '-'` when trying to update the Provenance Matrix in `PROJECT_CONTEXT.md`.
+   * **Root Cause:** macOS's BSD `sed` is notoriously strict and misinterpreted the `**` bold markdown characters in the replacement string as special flags.
+   * **Fix:** Bypassed `sed` entirely and used a Python one-liner to safely read, replace, and write the file content.
+
+3. **Debug Script AttributeError (`config_name`):**
+   * **Symptom:** `debug_provenance.py` crashed with `AttributeError: type object 'EvaluationRun' has no attribute 'config_name'`.
+   * **Root Cause:** The debug script tried to query `EvaluationRun` by `config_name`, but that field lives on the `SystemConfig` parent table, not the run itself.
+   * **Fix:** Simplified the debug script to just select the most recent run directly, avoiding the join.
+
+4. **Alembic Autogenerate False Positive:**
+   * **Symptom:** `alembic revision --autogenerate` kept detecting the `search_vector` column as "removed" even though it exists in the database.
+   * **Root Cause:** We added `search_vector` via raw SQL in Phase 7, so it was never in the SQLAlchemy `models.py` definition. Alembic compares the DB state to the models, sees the mismatch, and tries to drop it.
+   * **Fix:** We stamped the initial migration, and we simply ignore the false positive drop in subsequent migrations. (Future fix: add `search_vector` to the SQLAlchemy model definition or use a `server_default`).

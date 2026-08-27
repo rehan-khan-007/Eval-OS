@@ -1,7 +1,8 @@
 import asyncio
 import typer
+import uuid
 from database import AsyncSessionLocal
-from models import EvaluationExample, SystemConfig
+from models import EvaluationExample, SystemConfig, Experiment
 from evaluators.deterministic import ToolSelectionEvaluator, SourceRecallEvaluator, LatencyEvaluator, AbstentionEvaluator
 from evaluators.llm_judge import LLMJudgeEvaluator
 from evaluators.answer_quality import AnswerQualityEvaluator
@@ -91,7 +92,6 @@ def run_eval(
             evaluators.append(ReferenceAnswerEvaluator(judge_model=judge_model))
             typer.echo("Detected RAG dataset. Using SourceRecall, LLMJudge, Abstention, AnswerQuality, Citation, and ReferenceAnswer evaluators.")
 
-        # Pass concurrency to RunEngine
         engine = RunEngine(sys_config_id, config_name, adapter, evaluators, concurrency=concurrency)
         typer.echo(f"Starting evaluation run (Concurrency: {concurrency})...")
         run_id = await engine.execute_run(dataset_version_id, examples)
@@ -105,9 +105,10 @@ def run_benchmark(
     retriever: str = typer.Option("hybrid", "--retriever", help="dense, bm25, or hybrid"),
     top_k: int = typer.Option(3, "--top-k", help="Number of chunks to retrieve"),
     embedding_model: str = typer.Option("openai/text-embedding-3-small", "--embedding-model"),
-    concurrency: int = typer.Option(5, "--concurrency", help="Number of examples to process concurrently")
+    concurrency: int = typer.Option(5, "--concurrency", help="Number of examples to process concurrently"),
+    experiment_name: str = typer.Option("Benchmark", "--experiment-name", help="Name of the experiment to group runs under")
 ):
-    """Runs a benchmark across multiple models for the same dataset."""
+    """Runs a benchmark across multiple models for the same dataset, grouped under an Experiment."""
     async def run():
         async with AsyncSessionLocal() as db:
             stmt = select(EvaluationExample).where(EvaluationExample.dataset_version_id == dataset_version_id)
@@ -123,6 +124,14 @@ def run_benchmark(
                 "question": ex.question,
                 "metadata": ex.metadata_json or {}
             } for ex in db_examples]
+
+        # Create or fetch Experiment
+        async with AsyncSessionLocal() as db:
+            exp_id = f"exp-{uuid.uuid4().hex[:8]}"
+            exp = Experiment(id=exp_id, name=experiment_name, description=f"Benchmark on {dataset_version_id}")
+            db.add(exp)
+            await db.commit()
+            typer.echo(f"Created Experiment: {exp_id} ({experiment_name})")
 
         model_list = [m.strip() for m in models.split(",")]
         run_ids = []
@@ -168,7 +177,7 @@ def run_benchmark(
                 ReferenceAnswerEvaluator(judge_model=judge_model)
             ]
             
-            engine = RunEngine(sys_config_id, config_name, adapter, evaluators, concurrency=concurrency)
+            engine = RunEngine(sys_config_id, config_name, adapter, evaluators, concurrency=concurrency, experiment_id=exp_id)
             run_id = await engine.execute_run(dataset_version_id, examples)
             run_ids.append(run_id)
             typer.echo(f"Finished {model}. Run ID: {run_id}")

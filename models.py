@@ -52,6 +52,15 @@ class SystemConfig(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     runs: Mapped[list["EvaluationRun"]] = relationship(back_populates="system_config")
 
+# NEW: Experiment table to group runs
+class Experiment(Base):
+    __tablename__ = "experiments"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    runs: Mapped[list["EvaluationRun"]] = relationship(back_populates="experiment")
+
 class EvaluationRun(Base):
     __tablename__ = "evaluation_runs"
     id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -62,12 +71,15 @@ class EvaluationRun(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     
-    # NEW: P0 Provenance fields
     code_sha: Mapped[str | None] = mapped_column(String, nullable=True)
     dependency_lock: Mapped[str | None] = mapped_column(Text, nullable=True)
     
+    # NEW: Link to Experiment
+    experiment_id: Mapped[str | None] = mapped_column(ForeignKey("experiments.id"), nullable=True)
+    
     system_config: Mapped["SystemConfig"] = relationship(back_populates="runs")
     executions: Mapped[list["Execution"]] = relationship(back_populates="run")
+    experiment: Mapped["Experiment"] = relationship(back_populates="runs")
 
 class Execution(Base):
     __tablename__ = "executions"
