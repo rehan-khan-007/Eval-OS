@@ -31,7 +31,6 @@ class RunEngine:
         except Exception:
             pass
             
-        # Construct Canonical Fingerprint
         evaluator_suite = sorted([f"{e.name}:{e.version}" for e in self.evaluators])
         config_data = {
             "code_sha": code_sha,
@@ -40,7 +39,6 @@ class RunEngine:
             "evaluator_suite": evaluator_suite,
             "dependency_lock": dep_lock
         }
-        # Canonical JSON serialization (sort_keys=True)
         canonical_str = json.dumps(config_data, sort_keys=True)
         fingerprint = hashlib.sha256(canonical_str.encode()).hexdigest()
             
@@ -48,12 +46,18 @@ class RunEngine:
 
     async def _process_single_example(self, ex: dict, run_id: str) -> tuple:
         async with self.semaphore:
-            sys_output = await self.system_adapter.generate(ex)
-            metric_results = []
-            for evaluator in self.evaluators:
-                result = await evaluator.evaluate(ex, sys_output, sys_output.get("retrieved_evidence", []))
-                metric_results.append((evaluator, result))
-            return (ex, sys_output, metric_results)
+            # P0 Fix: Isolate exceptions so one failure doesn't crash asyncio.gather
+            try:
+                sys_output = await self.system_adapter.generate(ex)
+                metric_results = []
+                for evaluator in self.evaluators:
+                    result = await evaluator.evaluate(ex, sys_output, sys_output.get("retrieved_evidence", []))
+                    metric_results.append((evaluator, result))
+                return (ex, sys_output, metric_results)
+            except Exception as e:
+                # Return a mock system error output
+                sys_output = {"answer": "", "error": str(e), "cost": 0.0, "latency_ms": 0.0}
+                return (ex, sys_output, [])
 
     async def execute_run(self, dataset_version_id: str, examples: list) -> str:
         provenance = self._get_provenance(dataset_version_id)
@@ -105,6 +109,7 @@ class RunEngine:
                         evaluator_name=evaluator.name,
                         evaluator_version=evaluator.version,
                         score=result["score"],
+                        status=result.get("status", "success"), # P0 Fix: Persist evaluator status
                         explanation=result.get("explanation"),
                         evidence_breakdown=result.get("evidence_breakdown")
                     )

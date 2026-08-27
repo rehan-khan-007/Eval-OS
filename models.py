@@ -106,6 +106,7 @@ class MetricResult(Base):
     evaluator_name: Mapped[str] = mapped_column(String, nullable=False)
     evaluator_version: Mapped[str] = mapped_column(String, nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str | None] = mapped_column(String, nullable=True)
     evidence_breakdown: Mapped[dict | None] = mapped_column(JSONB, nullable=True) 
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     execution: Mapped["Execution"] = relationship(back_populates="metrics")

@@ -1,5 +1,4 @@
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel
 from database import AsyncSessionLocal
 from models import Experiment, EvaluationRun, SystemConfig, Dataset, DatasetVersion, EvaluationExample
 from analysis_engine import AnalysisEngine
@@ -7,9 +6,9 @@ from adapters.rag_adapter import RAGAdapter
 from evaluators.llm_judge import LLMJudgeEvaluator
 from sqlalchemy import select
 from api.schemas import (
-    ExperimentSchema, ExperimentDetailSchema, RunSummarySchema,
+    ExperimentSchema, ExperimentDetailSchema,
     RunMetricsSchema, DiagnosisSchema, PlaygroundResponseSchema,
-    SaveCandidateRequest, SaveCandidateResponse
+    PlaygroundRequest, SaveCandidateRequest, SaveCandidateResponse
 )
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -108,6 +107,7 @@ async def slice_run(run_id: str, slice_field: str):
 @limiter.limit("5/minute")
 async def playground(request: Request, req: PlaygroundRequest):
     """Runs a live RAG + Evaluation pipeline using the user's API key. Rate limited to 5 req/min."""
+    request_id = str(uuid.uuid4())
     try:
         adapter = RAGAdapter(
             model=req.model, 
@@ -133,19 +133,18 @@ async def playground(request: Request, req: PlaygroundRequest):
             "judge": judge_result
         }
     except Exception as e:
-        # P0 Security Fix: Do not return raw exception strings. Log server-side, return generic error.
-        logger.error(f"Playground error for question: {req.question[:50]}... Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal Server Error. Check server logs.")
+        # P0 Security Fix: Do not log raw exception strings as they may contain auth headers.
+        logger.error(f"Playground error [Request ID: {request_id}]. Exception type: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error. Request ID: {request_id}")
 
 @app.post("/api/playground/save", response_model=SaveCandidateResponse)
 @limiter.limit("5/minute")
 async def save_playground_candidate(request: Request, req: SaveCandidateRequest):
-    """Saves a playground run as a candidate evaluation case in a separate dataset (does not mutate core benchmark)."""
+    """Saves a playground run as a candidate evaluation case."""
     candidate_ds_id = "ds-playground-candidates"
     candidate_dv_id = "dv-playground-candidates-v1"
     
     async with AsyncSessionLocal() as db:
-        # Ensure candidate dataset exists
         ds = await db.get(Dataset, candidate_ds_id)
         if not ds:
             ds = Dataset(id=candidate_ds_id, name="Playground Candidate Cases")
@@ -156,23 +155,20 @@ async def save_playground_candidate(request: Request, req: SaveCandidateRequest)
             dv = DatasetVersion(id=candidate_dv_id, dataset_id=candidate_ds_id, version_tag="v1", commit_hash="n/a")
             db.add(dv)
             
-        # Create the example
         ex_hash = hashlib.sha256(req.question.encode()).hexdigest()
         ex_id = f"ex-{ex_hash[:16]}"
         
-        # Prevent duplicates
         existing = await db.get(EvaluationExample, ex_id)
         if existing:
             return {"status": "already_saved", "example_id": ex_id}
 
-        # Extract sources from evidence
         sources = [e.get("source", "") for e in req.retrieved_evidence if e.get("source")]
         
         ex = EvaluationExample(
             id=ex_id,
             dataset_version_id=candidate_dv_id,
             question=req.question,
-            reference_answer="", # Left blank for human review
+            reference_answer="",
             task_type="playground_candidate",
             domain="unknown",
             metadata_json={
