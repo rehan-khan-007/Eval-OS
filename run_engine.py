@@ -24,10 +24,10 @@ class RunEngine:
         except Exception:
             pass
             
-        dep_lock = "unknown"
+        dep_spec = "unknown"
         try:
             with open("requirements.txt", "r") as f:
-                dep_lock = f.read()
+                dep_spec = f.read()
         except Exception:
             pass
             
@@ -37,16 +37,15 @@ class RunEngine:
             "dataset_version_id": dataset_version_id,
             "system_config_id": self.sys_config_id,
             "evaluator_suite": evaluator_suite,
-            "dependency_lock": dep_lock
+            "dependency_spec": dep_spec
         }
         canonical_str = json.dumps(config_data, sort_keys=True)
         fingerprint = hashlib.sha256(canonical_str.encode()).hexdigest()
             
-        return {"code_sha": code_sha, "dependency_lock": dep_lock, "fingerprint": fingerprint}
+        return {"code_sha": code_sha, "dependency_spec": dep_spec, "fingerprint": fingerprint}
 
     async def _process_single_example(self, ex: dict, run_id: str) -> tuple:
         async with self.semaphore:
-            # P0 Fix: Isolate exceptions so one failure doesn't crash asyncio.gather
             try:
                 sys_output = await self.system_adapter.generate(ex)
                 metric_results = []
@@ -55,8 +54,9 @@ class RunEngine:
                     metric_results.append((evaluator, result))
                 return (ex, sys_output, metric_results)
             except Exception as e:
-                # Return a mock system error output
-                sys_output = {"answer": "", "error": str(e), "cost": 0.0, "latency_ms": 0.0}
+                # P1 Fix: Sanitize persisted error message to prevent leaking sensitive provider info
+                safe_error = type(e).__name__
+                sys_output = {"answer": "", "error": safe_error, "cost": 0.0, "latency_ms": 0.0, "tokens_in": 0, "tokens_out": 0, "retrieved_evidence": []}
                 return (ex, sys_output, [])
 
     async def execute_run(self, dataset_version_id: str, examples: list) -> str:
@@ -71,7 +71,7 @@ class RunEngine:
                 status="running",
                 started_at=datetime.now(timezone.utc),
                 code_sha=provenance["code_sha"],
-                dependency_lock=provenance["dependency_lock"],
+                dependency_lock=provenance["dependency_spec"],
                 run_fingerprint=provenance["fingerprint"],
                 experiment_id=self.experiment_id
             )
@@ -82,8 +82,13 @@ class RunEngine:
         results = await asyncio.gather(*tasks)
         
         total_cost = 0.0
+        has_errors = False
+        
         async with AsyncSessionLocal() as db:
             for ex, sys_output, metric_results in results:
+                if sys_output.get("error"):
+                    has_errors = True
+                    
                 total_cost += sys_output.get("cost", 0.0)
 
                 execution_id = f"exec-{uuid.uuid4().hex[:8]}"
@@ -109,7 +114,7 @@ class RunEngine:
                         evaluator_name=evaluator.name,
                         evaluator_version=evaluator.version,
                         score=result["score"],
-                        status=result.get("status", "success"), # P0 Fix: Persist evaluator status
+                        status=result.get("status", "success"),
                         explanation=result.get("explanation"),
                         evidence_breakdown=result.get("evidence_breakdown")
                     )
@@ -119,7 +124,8 @@ class RunEngine:
 
         async with AsyncSessionLocal() as db:
             run = await db.get(EvaluationRun, run_id)
-            run.status = "complete"
+            # P0 Fix: Track if any examples failed and set run status accordingly
+            run.status = "complete_with_errors" if has_errors else "complete"
             run.total_cost = total_cost
             run.completed_at = datetime.now(timezone.utc)
             await db.commit()

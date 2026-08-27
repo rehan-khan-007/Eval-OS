@@ -6,6 +6,8 @@ from adapters.rag_adapter import RAGAdapter
 from evaluators.llm_judge import LLMJudgeEvaluator
 from sqlalchemy import select
 from api.schemas import (
+    SliceSchema,
+    SliceSchema,
     ExperimentSchema, ExperimentDetailSchema,
     RunMetricsSchema, DiagnosisSchema, PlaygroundResponseSchema,
     PlaygroundRequest, SaveCandidateRequest, SaveCandidateResponse
@@ -92,14 +94,14 @@ async def diagnose_run(run_id: str):
         raise HTTPException(status_code=404, detail="Run not found or no data")
     return data
 
-@app.get("/api/runs/{run_id}/slice/{slice_field}")
+@app.get("/api/runs/{run_id}/slice/{slice_field}", response_model=SliceSchema)
 async def slice_run(run_id: str, slice_field: str):
     if slice_field not in ["domain", "task_type"]:
         raise HTTPException(status_code=400, detail="Slice field must be 'domain' or 'task_type'")
     data = await AnalysisEngine.analyze_run_slices(run_id, slice_field)
     if not data:
         raise HTTPException(status_code=404, detail="Run not found or no data")
-    return data
+    return {"slices": data}
 
 # --- INTERACTIVE PLAYGROUND ---
 
