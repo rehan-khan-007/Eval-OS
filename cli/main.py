@@ -5,6 +5,7 @@ from cli.inspect_cmds import inspect_run, inspect_failures, diagnose_run
 from cli.label_cmds import label_judgements, calculate_agreement
 from cli.compare_cmds import compare_runs
 from cli.regression_cmds import regression_check
+from cli.experiment_cmds import inspect_experiment
 
 app = typer.Typer()
 
@@ -19,6 +20,7 @@ app.command()(calculate_agreement)
 app.command()(compare_runs)
 app.command()(diagnose_run)
 app.command()(regression_check)
+app.command()(inspect_experiment)
 
 if __name__ == "__main__":
     app()

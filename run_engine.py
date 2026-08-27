@@ -7,12 +7,13 @@ from database import AsyncSessionLocal
 from models import SystemConfig, EvaluationRun, Execution, MetricResult
 
 class RunEngine:
-    def __init__(self, sys_config_id: str, config_name: str, system_adapter, evaluators: list, concurrency: int = 5):
+    def __init__(self, sys_config_id: str, config_name: str, system_adapter, evaluators: list, concurrency: int = 5, experiment_id: str = None):
         self.sys_config_id = sys_config_id
         self.config_name = config_name
         self.system_adapter = system_adapter
         self.evaluators = evaluators
         self.semaphore = asyncio.Semaphore(concurrency)
+        self.experiment_id = experiment_id
 
     def _get_provenance(self) -> dict:
         """Capture current code SHA and dependency lock for reproducibility."""
@@ -52,7 +53,8 @@ class RunEngine:
                 status="running",
                 started_at=datetime.now(timezone.utc),
                 code_sha=provenance["code_sha"],
-                dependency_lock=provenance["dependency_lock"]
+                dependency_lock=provenance["dependency_lock"],
+                experiment_id=self.experiment_id
             )
             db.add(run)
             await db.commit()
