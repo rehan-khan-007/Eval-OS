@@ -21,7 +21,8 @@ def run_eval(
     judge_model: str = typer.Option("openai/gpt-4o-mini", "--judge-model"),
     retriever: str = typer.Option("hybrid", "--retriever", help="dense, bm25, or hybrid"),
     top_k: int = typer.Option(3, "--top-k", help="Number of chunks to retrieve"),
-    embedding_model: str = typer.Option("openai/text-embedding-3-small", "--embedding-model")
+    embedding_model: str = typer.Option("openai/text-embedding-3-small", "--embedding-model"),
+    concurrency: int = typer.Option(5, "--concurrency", help="Number of examples to process concurrently")
 ):
     async def run():
         async with AsyncSessionLocal() as db:
@@ -90,8 +91,9 @@ def run_eval(
             evaluators.append(ReferenceAnswerEvaluator(judge_model=judge_model))
             typer.echo("Detected RAG dataset. Using SourceRecall, LLMJudge, Abstention, AnswerQuality, Citation, and ReferenceAnswer evaluators.")
 
-        engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
-        typer.echo("Starting evaluation run...")
+        # Pass concurrency to RunEngine
+        engine = RunEngine(sys_config_id, config_name, adapter, evaluators, concurrency=concurrency)
+        typer.echo(f"Starting evaluation run (Concurrency: {concurrency})...")
         run_id = await engine.execute_run(dataset_version_id, examples)
         typer.echo(f"Evaluation complete. Run ID: {run_id}")
     asyncio.run(run())
@@ -102,7 +104,8 @@ def run_benchmark(
     judge_model: str = typer.Option("openai/gpt-4o-mini", "--judge-model"),
     retriever: str = typer.Option("hybrid", "--retriever", help="dense, bm25, or hybrid"),
     top_k: int = typer.Option(3, "--top-k", help="Number of chunks to retrieve"),
-    embedding_model: str = typer.Option("openai/text-embedding-3-small", "--embedding-model")
+    embedding_model: str = typer.Option("openai/text-embedding-3-small", "--embedding-model"),
+    concurrency: int = typer.Option(5, "--concurrency", help="Number of examples to process concurrently")
 ):
     """Runs a benchmark across multiple models for the same dataset."""
     async def run():
@@ -165,7 +168,7 @@ def run_benchmark(
                 ReferenceAnswerEvaluator(judge_model=judge_model)
             ]
             
-            engine = RunEngine(sys_config_id, config_name, adapter, evaluators)
+            engine = RunEngine(sys_config_id, config_name, adapter, evaluators, concurrency=concurrency)
             run_id = await engine.execute_run(dataset_version_id, examples)
             run_ids.append(run_id)
             typer.echo(f"Finished {model}. Run ID: {run_id}")
