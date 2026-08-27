@@ -58,13 +58,14 @@ Runs the dataset through 5 different LLMs concurrently, calculating real cost, l
 ### 3. Diagnose Failures
 Instead of just seeing a score, see *why* it failed.
 `python cli.py diagnose-run run-ccbcb9b2`
-# [2] Retrieval Failures (2)
-# [3] Generation Failures (6)
+
+#### [2] Retrieval Failures (2)
+#### [3] Generation Failures (6)
 
 ### 4. Check for Regressions (CI/CD)
 Compare a new run against a baseline. Fails if recall drops by >2% AND is statistically significant.
 `python cli.py regression-check run-baseline-id run-new-id --threshold 0.02`
-# VERDICT: REGRESSION DETECTED. The new run is significantly worse.
+### VERDICT: REGRESSION DETECTED. The new run is significantly worse.
 
 ---
 
@@ -82,6 +83,7 @@ EvalOS uses an asynchronous architecture to prevent I/O bottlenecks during evalu
 *   **Deployment:** Docker containers deployed to Render.
 
 ### Project Structure
+```text
 Eval-OS/
 ├── api/                   # FastAPI backend (REST API)
 ├── cli/                   # Modular Typer commands (run, inspect, compare, label)
@@ -95,7 +97,7 @@ Eval-OS/
 ├── Dockerfile             # Backend deployment config
 ├── Dockerfile.dashboard   # Frontend deployment config
 └── docs/benchmarks/       # Real, documented benchmark results
-
+```
 ---
 
 ## 📊 Real Benchmarks & Engineering Logs
