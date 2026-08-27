@@ -73,6 +73,7 @@ class EvaluationRun(Base):
     
     code_sha: Mapped[str | None] = mapped_column(String, nullable=True)
     dependency_lock: Mapped[str | None] = mapped_column(Text, nullable=True)
+    run_fingerprint: Mapped[str | None] = mapped_column(String, nullable=True)
     
     # NEW: Link to Experiment
     experiment_id: Mapped[str | None] = mapped_column(ForeignKey("experiments.id"), nullable=True)
