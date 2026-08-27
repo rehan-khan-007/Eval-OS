@@ -1,6 +1,7 @@
 import asyncio
 import json
 import typer
+import hashlib
 from database import init_db, AsyncSessionLocal
 from models import Dataset, DatasetVersion, EvaluationExample
 from sqlalchemy import select
@@ -41,7 +42,10 @@ def ingest_dataset(file_path: str = typer.Argument(..., help="Path to the JSON d
                 if "expected_sources" in item:
                     metadata["expected_sources"] = item["expected_sources"]
 
-                ex_id = f"ex-{abs(hash(question)) % (10 ** 8)}"
+                # P0 Fix: Use SHA256 for deterministic, reproducible Example IDs
+                ex_hash = hashlib.sha256(question.encode()).hexdigest()
+                ex_id = f"ex-{ex_hash[:16]}"
+                
                 ex = EvaluationExample(
                     id=ex_id,
                     dataset_version_id=dv_id,
