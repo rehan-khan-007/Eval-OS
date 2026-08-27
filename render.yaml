@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: EvalOS-API
+    runtime: python
+    plan: free
+    rootDir: ./
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
