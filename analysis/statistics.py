@@ -11,6 +11,7 @@ async def compare_runs(run_a_id: str, run_b_id: str, metric_name: str = "source_
             .where(Execution.run_id == run_a_id, MetricResult.evaluator_name == metric_name)
         )
         rows_a = (await db.execute(stmt_a)).all()
+        # Only include valid scores (>= 0.0) in the paired comparison
         scores_a = {exec.example_id: metric.score for exec, metric in rows_a if metric.score >= 0.0}
 
         stmt_b = (
@@ -65,5 +66,6 @@ async def compare_runs(run_a_id: str, run_b_id: str, metric_name: str = "source_
             "mean_diff": mean_diff,
             "ci_lower": lower_bound,
             "ci_upper": upper_bound,
-            "is_significant": not (lower_bound <= 0 <= upper_bound)
+            "is_significant": not (lower_bound <= 0 <= upper_bound),
+            "paired_valid_examples": n
         }

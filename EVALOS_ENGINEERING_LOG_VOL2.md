@@ -209,3 +209,17 @@ During the infrastructure upgrades in Stage C, we encountered and fixed several 
 4. **Cloud Deployment:** Both services were deployed to Render (Free Tier). The backend connects securely to Neon Postgres and Upstash Redis. The frontend communicates with the backend via HTTP.
 
 **Result:** EvalOS is now a live, visual web application. Users can inspect experiments, compare Pareto frontiers, and diagnose failures in a browser without touching the CLI.
+
+---
+
+## FA Phase 1: Scientific Rigor (Metric-Aware Stats & Inconclusive States)
+
+**What was done:** The CTO audit (Final Audit Phase 1) required the statistical engine to be scientifically mature. It needed to handle metric directions (higher vs. lower is better), practical thresholds, and an `INCONCLUSIVE` state for noisy data.
+
+**Architecture Change:**
+1. Updated `analysis/statistics.py` to track `paired_valid_examples` (N), ensuring the sample size reflects only examples successfully scored in both runs.
+2. Added a `METRIC_DIRECTIONS` registry to `analysis/regression.py` to distinguish `higher_is_better` (e.g., recall) from `lower_is_better` (e.g., latency).
+3. Implemented a 3-state decision matrix in `_determine_verdict`: `PASS`, `REGRESSION`, `IMPROVEMENT`, and `INCONCLUSIVE`. A metric is only a regression if the Δ exceeds the threshold AND the 95% CI strictly excludes zero in the direction of the regression.
+4. Updated the CLI to output the full scientific breakdown: `Δ`, `95% CI`, `N`, and the `Verdict`.
+
+**Result:** EvalOS successfully re-evaluated the Dense vs. Hybrid run. The 4.2% recall drop was correctly flagged as `INCONCLUSIVE` (CI touched 0.0), while the latency increase was flagged as `REGRESSION`. The engine is now scientifically valid.
