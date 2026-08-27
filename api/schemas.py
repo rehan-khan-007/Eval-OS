@@ -77,3 +77,9 @@ class SaveCandidateRequest(BaseModel):
 class SaveCandidateResponse(BaseModel):
     status: str
     example_id: str
+
+class SliceSchema(BaseModel):
+    slices: dict
+
+class SliceSchema(BaseModel):
+    slices: dict

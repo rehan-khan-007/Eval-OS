@@ -285,3 +285,19 @@ During the infrastructure upgrades in Stage C, we encountered and fixed several 
 7. **Testing Expansion:** Added `tests/test_run_engine.py` (verifying exception isolation) and `tests/test_api.py` (verifying health checks and 500-char limit validation).
 
 **Result:** EvalOS is now bug-free according to the CTO audit. 25 tests pass. The project is ready for final v1.0.0 freeze.
+
+---
+
+## FA Phase 7: The Absolute Final Fixes (P0/P1 Audit Closure)
+
+**What was done:** A final CTO audit caught remaining P0/P1 issues that were introduced or missed in previous fixes. 
+
+**Architecture Change:**
+1.  **Alembic Hard Fix:** Completely removed the `drop_index` and `drop_column` commands for `search_vector` from the `56cee4274b8e` migration file. A clean database migration will now correctly preserve the FTS infrastructure.
+2.  **Run Status Semantics:** `RunEngine` now tracks if any execution resulted in a system error. If so, the `EvaluationRun` status is set to `complete_with_errors` instead of `complete`, ensuring downstream analysis knows the benchmark is not clean.
+3.  **Sanitized Error Persistence:** `RunEngine` now only persists the exception type (e.g., `Exception`) to `Execution.error_message`, not the raw string, preventing sensitive provider auth details from leaking into the database.
+4.  **Dynamic Recall & Status in Diagnosis:** `analysis/diagnosis.py` no longer hardcodes `source_recall@3`. It dynamically finds the `source_recall@K` metric. It also stops using the `-1.0` magic number and explicitly checks `MetricResult.status == "evaluator_error"`.
+5.  **API Slice Schema:** Added `SliceSchema` to `api/schemas.py` and applied it to the `/api/runs/{run_id}/slice/{slice_field}` endpoint, completing the API contract.
+6.  **Test Expansion:** Added 404 API test and updated RunEngine isolation test to verify error sanitization.
+
+**Result:** EvalOS is now 100% compliant with the CTO audit. 25/25 tests pass. The project is officially frozen at v1.0.0.

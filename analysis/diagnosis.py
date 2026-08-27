@@ -19,7 +19,8 @@ async def diagnose_run(run_id: str) -> dict:
             
         exec_data = defaultdict(lambda: {"metrics": {}, "example": None, "exec": None})
         for exec, metric, example in rows:
-            exec_data[exec.id]["metrics"][metric.evaluator_name] = metric.score
+            # Store both score and status
+            exec_data[exec.id]["metrics"][metric.evaluator_name] = {"score": metric.score, "status": metric.status}
             exec_data[exec.id]["example"] = example
             exec_data[exec.id]["exec"] = exec
             
@@ -40,30 +41,38 @@ async def diagnose_run(run_id: str) -> dict:
             
             question = example.question[:50] + "..." if len(example.question) > 50 else example.question
             expected_sources = example.metadata_json.get("expected_sources", [])
-            recall = metrics.get("source_recall@3", 0.0) # Note: dynamically matching @k would be better later
-            faithfulness = metrics.get("faithfulness", 0.0)
-            abstention = metrics.get("abstention_accuracy", 1.0)
+            
+            # P1 Fix: Dynamically find source_recall@K
+            recall_data = next((v for k, v in metrics.items() if k.startswith("source_recall")), {"score": 0.0, "status": "success"})
+            recall_score = recall_data.get("score", 0.0)
+            
+            faithfulness_data = metrics.get("faithfulness", {"score": 0.0, "status": "success"})
+            faithfulness_score = faithfulness_data.get("score", 0.0)
+            faithfulness_status = faithfulness_data.get("status", "success")
+            
+            abstention_score = metrics.get("abstention_accuracy", {"score": 1.0}).get("score", 1.0)
             
             entry = {
                 "question": question,
                 "example_id": example.id,
-                "recall": recall,
-                "faithfulness": faithfulness,
-                "abstention": abstention
+                "recall": recall_score,
+                "faithfulness": faithfulness_score,
+                "abstention": abstention_score
             }
             
             if exec.status != "success":
                 taxonomy["system_failure"].append(entry)
-            elif faithfulness == -1.0:
+            # P1 Fix: Use MetricResult.status instead of score == -1.0
+            elif faithfulness_status == "evaluator_error":
                 taxonomy["evaluator_error"].append(entry)
             elif len(expected_sources) == 0:
-                if abstention == 1.0:
+                if abstention_score == 1.0:
                     taxonomy["negative_control_pass"].append(entry)
                 else:
                     taxonomy["negative_control_fail"].append(entry)
-            elif recall == 0.0:
+            elif recall_score == 0.0:
                 taxonomy["retrieval_failure"].append(entry)
-            elif faithfulness < 0.8 or abstention == 0.0:
+            elif faithfulness_score < 0.8 or abstention_score == 0.0:
                 taxonomy["generation_failure"].append(entry)
             else:
                 taxonomy["full_success"].append(entry)

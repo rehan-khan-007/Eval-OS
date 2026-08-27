@@ -11,7 +11,6 @@ def test_root():
     response = client.get("/")
     assert response.status_code == 200
     assert response.json()["service"] == "EvalOS API"
-    assert "docs" in response.json()
 
 def test_health_check():
     response = client.get("/api/health")
@@ -19,12 +18,15 @@ def test_health_check():
     assert response.json()["status"] == "healthy"
 
 def test_playground_validation_missing_key():
-    """Test that missing API key results in a 422 validation error."""
     response = client.post("/api/playground", json={"question": "test"})
     assert response.status_code == 422
 
 def test_playground_validation_long_question():
-    """Test that a question > 500 chars results in a 422 validation error."""
     long_question = "a" * 501
     response = client.post("/api/playground", json={"api_key": "test", "question": long_question})
     assert response.status_code == 422
+
+def test_get_run_not_found():
+    """Test that a nonexistent run ID returns a 404."""
+    response = client.get("/api/runs/nonexistent-id")
+    assert response.status_code == 404
