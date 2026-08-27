@@ -172,14 +172,14 @@ Cost is `estimated_cost`: hardcoded pricing in `rag_adapter.py` based on token c
 | Parameter         | Persisted? | Where?       | Required for reproduction? |
 | ----------------- | ---------- | ------------ | -------------------------- |
 | Dataset version   | Yes        | EvalRun      | YES                        |
-| Code SHA          | **No**     | -            | **YES (P0 Gap)**           |
+| Code SHA          | Yes        | EvalRun      | YES                        |
 | Model             | Yes        | SystemConfig | YES                        |
 | Prompt version    | Yes        | SystemConfig | YES                        |
 | Judge             | Yes        | MetricResult | YES                        |
 | Retrieval config  | Yes        | SystemConfig | YES                        |
 | Evaluator version | Yes        | MetricResult | YES                        |
 | Seed              | Yes (stats)| Analysis      | Depends                    |
-| Dependency lock   | **No**     | -            | **YES (P0 Gap)**           |
+| Dependency lock   | Yes        | EvalRun      | YES                        |
 | Cache state       | No         | -            | For latency                |
 
 ## 24. Stochasticity / Repeated-Trial Evaluation

@@ -142,3 +142,16 @@ We wrote a migration script to insert 3 reference answers into the `metadata_jso
 3. This strictly adheres to Architectural Invariant I3 (DB sessions must not span external API calls).
 
 **Result:** Evaluation time dropped by over 60%. Metrics remained perfectly stable (88.9% recall, 93.2% faithfulness). The cache layer handled concurrent read/write requests flawlessly. Cost remained $0.00 on cache hits.
+
+---
+
+## Phase C3: Alembic Migrations & Experiment Provenance (P0 Fix)
+
+**What was done:** The CTO audit identified a P0 reproducibility gap: EvalOS did not record the `code_sha` or `dependency_lock` for a run. It also used ad-hoc SQL scripts for migrations.
+
+**Architecture Change:**
+1. Integrated **Alembic** for version-controlled database migrations. Configured `alembic/env.py` to auto-convert the async `DATABASE_URL` to a sync `psycopg2` URL for migration execution.
+2. Added `code_sha` and `dependency_lock` columns to the `EvaluationRun` schema via an Alembic migration.
+3. Updated `RunEngine` to capture the current Git commit SHA and `requirements.txt` content at the start of every run and persist them to the database.
+
+**Result:** EvalOS now stores the exact code and dependency state for every run. The P0 Provenance Gap is officially closed.

@@ -61,6 +61,11 @@ class EvaluationRun(Base):
     total_cost: Mapped[float] = mapped_column(Float, default=0.0)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    # NEW: P0 Provenance fields
+    code_sha: Mapped[str | None] = mapped_column(String, nullable=True)
+    dependency_lock: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
     system_config: Mapped["SystemConfig"] = relationship(back_populates="runs")
     executions: Mapped[list["Execution"]] = relationship(back_populates="run")
 
@@ -108,11 +113,8 @@ class HumanLabel(Base):
     metric_result_id: Mapped[str] = mapped_column(ForeignKey("metric_results.id"), nullable=False)
     execution_id: Mapped[str] = mapped_column(ForeignKey("executions.id"), nullable=False)
     agrees_with_judge: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    
-    # NEW: Rich human ratings for calibration
     human_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    failure_category: Mapped[str | None] = mapped_column(String, nullable=True) # e.g., "retrieval_failure", "generation_failure", "none"
+    failure_category: Mapped[str | None] = mapped_column(String, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     metric: Mapped["MetricResult"] = relationship(back_populates="human_labels")
