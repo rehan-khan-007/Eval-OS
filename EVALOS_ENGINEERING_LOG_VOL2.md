@@ -238,3 +238,21 @@ During the infrastructure upgrades in Stage C, we encountered and fixed several 
 5. Secured the Playground endpoint by replacing raw exception strings with generic "Internal Server Error" responses (P0 security fix).
 
 **Result:** EvalOS now records a cryptographic fingerprint of the evaluation configuration for every run. The API is professionally typed and safe from information disclosure.
+
+---
+
+## FA Phase 3: Testing the Core (Statistics, Regression, & Evaluator Semantics)
+
+**What was done:** The CTO audit (Final Audit Phase 3) identified testing as the biggest engineering weakness (4/10). The deterministic core needed proof of correctness without relying on LLM API calls.
+
+**Architecture Change:**
+1. Extracted the bootstrap math in `analysis/statistics.py` into a pure function `calculate_bootstrap_ci(diffs, iterations, seed)` for isolated testing.
+2. Created `tests/test_statistics.py` to test significant improvements, inconclusive noisy data, and zero variance.
+3. Created `tests/test_regression.py` to test the full decision matrix: `PASS`, `REGRESSION`, `IMPROVEMENT`, `INCONCLUSIVE`, for both `higher_is_better` and `lower_is_better` metrics.
+4. Created `tests/test_evaluators.py` to test `LLMJudgeEvaluator` failure semantics (malformed JSON, empty claims, markdown-wrapped JSON) by mocking the `AsyncOpenAI` client.
+
+**Real bug found and fixed (Cache Contamination in Tests):**
+* **Symptom:** `test_evaluators.py` failed because the first test cached its result in real Upstash Redis. Subsequent tests hit the cache and returned the first test's `status: "success"` instead of actually running the mock. This also caused `RuntimeError: Event loop is closed` because the real Redis client got tangled across `asyncio.run()` calls.
+* **Fix:** Patched `evaluators.llm_judge.get_cached` and `set_cached` with `AsyncMock` in the test helper. This isolated the tests from the real cache, ensuring each test ran the mocked LLM client independently.
+
+**Result:** EvalOS now has 19 passing tests. The deterministic core (RRF, Cache Keys, Statistics, Regression Decisions, Evaluator Parsing) is mathematically verified.

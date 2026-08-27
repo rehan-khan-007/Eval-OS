@@ -3,6 +3,32 @@ from models import Execution, MetricResult
 from sqlalchemy import select
 import numpy as np
 
+def calculate_bootstrap_ci(diffs: list[float], iterations: int = 1000, seed: int = 42) -> dict:
+    """Pure function to calculate paired bootstrap confidence intervals."""
+    if not diffs:
+        return {"mean_diff": 0.0, "ci_lower": 0.0, "ci_upper": 0.0, "is_significant": False, "paired_valid_examples": 0}
+        
+    diffs_array = np.array(diffs)
+    n = len(diffs_array)
+    
+    rng = np.random.default_rng(seed=seed)
+    boot_means = []
+    for _ in range(iterations):
+        sample = rng.choice(diffs_array, size=n, replace=True)
+        boot_means.append(np.mean(sample))
+    
+    lower_bound = np.percentile(boot_means, 2.5)
+    upper_bound = np.percentile(boot_means, 97.5)
+    mean_diff = np.mean(diffs_array)
+
+    return {
+        "mean_diff": mean_diff,
+        "ci_lower": lower_bound,
+        "ci_upper": upper_bound,
+        "is_significant": not (lower_bound <= 0 <= upper_bound),
+        "paired_valid_examples": n
+    }
+
 async def compare_runs(run_a_id: str, run_b_id: str, metric_name: str = "source_recall@3") -> dict:
     async with AsyncSessionLocal() as db:
         stmt_a = (
@@ -11,7 +37,6 @@ async def compare_runs(run_a_id: str, run_b_id: str, metric_name: str = "source_
             .where(Execution.run_id == run_a_id, MetricResult.evaluator_name == metric_name)
         )
         rows_a = (await db.execute(stmt_a)).all()
-        # Only include valid scores (>= 0.0) in the paired comparison
         scores_a = {exec.example_id: metric.score for exec, metric in rows_a if metric.score >= 0.0}
 
         stmt_b = (
@@ -45,27 +70,10 @@ async def compare_runs(run_a_id: str, run_b_id: str, metric_name: str = "source_
             else:
                 ties += 1
 
-        diffs_array = np.array(diffs)
-        n = len(diffs_array)
+        stats = calculate_bootstrap_ci(diffs)
+        stats["metric_name"] = metric_name
+        stats["a_wins"] = a_wins
+        stats["b_wins"] = b_wins
+        stats["ties"] = ties
         
-        rng = np.random.default_rng(seed=42)
-        boot_means = []
-        for _ in range(1000):
-            sample = rng.choice(diffs_array, size=n, replace=True)
-            boot_means.append(np.mean(sample))
-        
-        lower_bound = np.percentile(boot_means, 2.5)
-        upper_bound = np.percentile(boot_means, 97.5)
-        mean_diff = np.mean(diffs_array)
-
-        return {
-            "metric_name": metric_name,
-            "a_wins": a_wins,
-            "b_wins": b_wins,
-            "ties": ties,
-            "mean_diff": mean_diff,
-            "ci_lower": lower_bound,
-            "ci_upper": upper_bound,
-            "is_significant": not (lower_bound <= 0 <= upper_bound),
-            "paired_valid_examples": n
-        }
+        return stats
