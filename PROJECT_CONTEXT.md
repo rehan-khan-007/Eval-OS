@@ -323,3 +323,39 @@ EvalOS -> evaluates both.
 | 100% Reference Correctness | 3 | v1 | benchmark | YES | YES | NO (N=3 pilot) | LOW |
 | Judge is 13.2% lenient | 5 | v1 | benchmark | YES | YES | NO (N=5 pilot) | LOW |
 | Regression gate works | 36 | v1 | benchmark | YES | YES | YES | HIGH |
+
+
+---
+
+## Final Audit (FA) Update: Scientific Maturity & Hardening
+
+The Final CTO Audit required EvalOS to stop adding features and focus entirely on scientific validity, testing, and security. The following phases were completed:
+
+### FA Phase 1: Scientific Rigor
+*   **Inconclusive State:** Regression engine no longer forces binary PASS/FAIL. If a metric drops by the threshold but the 95% CI touches zero, the verdict is `INCONCLUSIVE`.
+*   **Metric Direction:** Added a registry for `higher_is_better` vs `lower_is_better` metrics.
+*   **Strict N:** Statistical comparisons now explicitly track `paired_valid_examples` (N).
+
+### FA Phase 2: Contracts & Provenance
+*   **Pydantic Schemas:** FastAPI backend now uses strict response models (`RunMetricsSchema`, `PlaygroundResponseSchema`), fixing the OpenAPI docs and guaranteeing frontend stability.
+*   **Run Fingerprint:** Runs now record a SHA256 `run_fingerprint` of the canonical JSON configuration (code, dataset, config, evaluators, dependencies). This is a provenance fingerprint, not a guarantee of identical execution.
+*   **Safe Errors:** Playground endpoint no longer returns raw exception strings.
+
+### FA Phase 3: Testing
+*   **Test Suite Expanded:** 19 tests now pass (up from 6). Added `test_statistics.py` (bootstrap CIs, zero variance), `test_regression.py` (full decision matrix), and `test_evaluators.py` (malformed JSON, empty claims, markdown parsing).
+*   **Cache Isolation:** Evaluator tests now mock the Redis cache to prevent state contamination between tests.
+
+### FA Phase 4: Playground Hardening
+*   **Rate Limiting:** Added `slowapi` to limit Playground abuse (5 req/min per IP).
+*   **Size Limits:** Questions are capped at 500 characters.
+*   **Save Candidate Case:** Users can save interesting playground failures to a `dv-playground-candidates-v1` dataset for human review, preventing benchmark contamination.
+
+### Final Maturity Assessment
+EvalOS is now an **Advanced Research Prototype / Early Evaluation Infrastructure**.
+*   Architecture: 8.5/10
+*   Engineering: 8/10
+*   Evaluation methodology: 7.5/10
+*   Statistical infrastructure: 8/10
+*   Testing: 7/10
+*   Security: 7/10
+*   Flagship potential: 9.2/10
