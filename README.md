@@ -39,7 +39,7 @@ EvalOS was built to prove empirically what works, not to assume "bigger is alway
 | **Failure Diagnosis** | Automatic taxonomy classification: Did it fail because of *Retrieval*, *Generation*, or *System Error*? |
 | **Statistical Significance** | A/B comparison with 1000-iteration Bootstrap Confidence Intervals to prove differences aren't just noise. |
 | **Regression Testing** | Set a baseline run and block deployments if a new run regresses beyond a threshold AND is statistically significant. |
-| **Bounded Concurrency** | `asyncio.Semaphore` ensures hundreds of examples are processed in parallel without hitting API rate limits. |
+| **Bounded Concurrency** | `asyncio.Semaphore` limits simultaneous API requests and reduces rate-limit pressure. |
 | **Cached Iteration** | Upstash Redis caching layer (version-aware keys) means re-running an evaluation on the same config eliminates duplicate LLM inference cost. |
 
 ---

@@ -29,9 +29,22 @@ def calculate_bootstrap_ci(diffs: list[float], iterations: int = 1000, seed: int
         "paired_valid_examples": n
     }
 
-async def compare_runs(baseline_run_id: str, candidate_run_id: str, metric_name: str = "source_recall@3") -> dict:
-    """Compares candidate against baseline. diff = candidate - baseline."""
+async def compare_runs(baseline_run_id: str, candidate_run_id: str, metric_name: str = None) -> dict:
+    """Compares candidate against baseline. diff = candidate - baseline. Infers metric if None."""
     async with AsyncSessionLocal() as db:
+        # P1 Fix: Infer metric if not provided
+        if metric_name is None:
+            stmt_infer = select(MetricResult.evaluator_name).where(
+                MetricResult.execution_id.in_(
+                    select(Execution.id).where(Execution.run_id == baseline_run_id)
+                ),
+                MetricResult.evaluator_name.like("source_recall@%")
+            ).limit(1)
+            res_infer = await db.execute(stmt_infer)
+            metric_name = res_infer.scalar_one_or_none()
+            if not metric_name:
+                return None
+
         stmt_a = (
             select(Execution, MetricResult)
             .join(MetricResult, Execution.id == MetricResult.execution_id)
@@ -61,7 +74,6 @@ async def compare_runs(baseline_run_id: str, candidate_run_id: str, metric_name:
         for ex_id in common_examples:
             val_baseline = scores_a[ex_id]
             val_candidate = scores_b[ex_id]
-            # P1 Fix: Standardize delta = candidate - baseline
             diff = val_candidate - val_baseline
             diffs.append(diff)
 
