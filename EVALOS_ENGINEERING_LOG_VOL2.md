@@ -195,3 +195,17 @@ During the infrastructure upgrades in Stage C, we encountered and fixed several 
    * **Symptom:** `alembic revision --autogenerate` kept detecting the `search_vector` column as "removed" even though it exists in the database.
    * **Root Cause:** We added `search_vector` via raw SQL in Phase 7, so it was never in the SQLAlchemy `models.py` definition. Alembic compares the DB state to the models, sees the mismatch, and tries to drop it.
    * **Fix:** We stamped the initial migration, and we simply ignore the false positive drop in subsequent migrations. (Future fix: add `search_vector` to the SQLAlchemy model definition or use a `server_default`).
+
+---
+
+## Stage D: Platformization (FastAPI & Streamlit Dashboard)
+
+**What was done:** The CTO audit (Stage D) required a visual product layer. EvalOS was transformed from a CLI-only tool into a full-stack, cloud-hosted platform.
+
+**Architecture Change:**
+1. **FastAPI Backend:** Created a modular `api/` directory exposing `AnalysisEngine` and database queries as a REST API (`/api/experiments`, `/api/runs/{id}`, etc.).
+2. **Streamlit Dashboard:** Created `dashboard.py` to fetch data from the API and render interactive tables, metric cards, and failure taxonomies.
+3. **Dockerization:** Created `Dockerfile` (backend) and `Dockerfile.dashboard` (frontend) for reproducible, cloud-native deployments.
+4. **Cloud Deployment:** Both services were deployed to Render (Free Tier). The backend connects securely to Neon Postgres and Upstash Redis. The frontend communicates with the backend via HTTP.
+
+**Result:** EvalOS is now a live, visual web application. Users can inspect experiments, compare Pareto frontiers, and diagnose failures in a browser without touching the CLI.
