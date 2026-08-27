@@ -7,7 +7,6 @@ from evaluators.llm_judge import LLMJudgeEvaluator
 from sqlalchemy import select
 from api.schemas import (
     SliceSchema,
-    SliceSchema,
     ExperimentSchema, ExperimentDetailSchema,
     RunMetricsSchema, DiagnosisSchema, PlaygroundResponseSchema,
     PlaygroundRequest, SaveCandidateRequest, SaveCandidateResponse
