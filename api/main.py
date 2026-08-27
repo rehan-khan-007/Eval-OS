@@ -1,7 +1,10 @@
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from database import AsyncSessionLocal
 from models import Experiment, EvaluationRun, SystemConfig
 from analysis_engine import AnalysisEngine
+from adapters.rag_adapter import RAGAdapter
+from evaluators.llm_judge import LLMJudgeEvaluator
 from sqlalchemy import select
 import uuid
 
@@ -87,3 +90,44 @@ async def slice_run(run_id: str, slice_field: str):
     if not data:
         raise HTTPException(status_code=404, detail="Run not found or no data")
     return data
+
+# --- NEW: INTERACTIVE PLAYGROUND ENDPOINT ---
+
+class PlaygroundRequest(BaseModel):
+    api_key: str
+    question: str
+    model: str = "openai/gpt-4o-mini"
+    judge_model: str = "openai/gpt-4o-mini"
+
+@app.post("/api/playground")
+async def playground(req: PlaygroundRequest):
+    """Runs a live RAG + Evaluation pipeline using the user's API key."""
+    try:
+        # 1. Initialize adapters with the user's key
+        adapter = RAGAdapter(
+            model=req.model, 
+            retriever_type="hybrid", 
+            retrieval_config={"top_k": 3, "embedding_model": "openai/text-embedding-3-small"}, 
+            api_key=req.api_key
+        )
+        judge = LLMJudgeEvaluator(judge_model=req.judge_model, api_key=req.api_key)
+
+        # 2. Run generation
+        input_data = {"question": req.question, "metadata": {}}
+        sys_output = await adapter.generate(input_data)
+
+        if sys_output.get("error"):
+            return {"error": sys_output["error"]}
+
+        # 3. Run evaluation
+        judge_result = await judge.evaluate(input_data, sys_output, sys_output.get("retrieved_evidence", []))
+
+        return {
+            "answer": sys_output.get("answer"),
+            "retrieved_evidence": sys_output.get("retrieved_evidence"),
+            "latency_ms": sys_output.get("latency_ms"),
+            "cost": sys_output.get("cost"),
+            "judge": judge_result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
