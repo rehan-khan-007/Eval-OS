@@ -21,8 +21,8 @@ EvalOS produces statistical comparisons and regression decisions using paired bo
 
 ## 3. How to Resolve Conflicts
 When sources disagree, the following hierarchy is authoritative:
-1.  Executed code
-2.  Tests
+1.  Executed implementation
+2.  Passing tests + test assertions
 3.  Database/schema definitions
 4.  Current benchmark artifacts
 5.  Git diffs/history
@@ -65,13 +65,15 @@ Execution
 Adapter
   ├── Retrieval
   └── Generation
-       ↓
+  ↓
+Raw execution artifacts
+  ↓
 Evaluation
   ├── Deterministic evaluators
   └── LLM evaluators
-       ↓
+  ↓
 MetricResult
-       ↓
+  ↓
 Analysis
   ├── Aggregation
   ├── Diagnosis
@@ -85,48 +87,67 @@ Calibration
 
 ## 8. Dataset Architecture
 *   **Current Dataset:** `dv-ds-retrieval_qa-v1` (36 questions, 4 domains).
-*   **Identity:** Example IDs are generated using `hash(question) % 10**8`. **Warning:** Python's `hash()` is randomized per process by default. This is a P0 reproducibility bug to be fixed.
+*   **Identity:** Example IDs are generated using `hashlib.sha256(question.encode()).hexdigest()[:16]`. This ensures deterministic, reproducible Example IDs independent of Python process randomization.
 
-## 9. Ground Truth & Evaluation Evidence Hierarchy
-| Signal           |   N | Nature                    | Trust level                              |
-| ---------------- | --: | ------------------------- | ---------------------------------------- |
-| Expected source  |  36 | Dataset annotation        | Medium                                   |
-| Reference answer |   3 | Human reference           | High for those 3                         |
-| Gold chunk       |   3 | Derived semantic labeling | Medium                                   |
-| Human score      |   5 | Human annotation          | High individually, low statistical power |
-| LLM judge        |  36 | Automated evaluator       | Not ground truth                         |
+## 9. Ground Truth & Evidence Hierarchy
+| Signal           |   N | Nature                    | Evidence status      | Statistical Power |
+| ---------------- | --: | ------------------------- | -------------------- | ----------------- |
+| Expected source  |  36 | Dataset annotation        | Unverified           | High (N=36)       |
+| Reference answer |   3 | Human reference           | Human-authored       | Low (N=3)         |
+| Gold chunk       |   3 | Derived semantic labeling | Derived              | Low (N=3)         |
+| Human score      |   5 | Human annotation          | Human-verified       | Low (N=5)         |
+| LLM judge        |  36 | Automated evaluator       | Automated            | High (N=36)       |
 
-## 10. Database Architecture
+## 10. Document Corpus Provenance
+*   **Current Corpus:** 47 real PDFs (19 arXiv, 28 SEBI).
+*   **Storage:** Tracked directly in Git under `data/docs/papers/`. This is a benchmark dependency and repository size risk.
+*   **Provenance Gap:** Source URLs and retrieval dates are known via fetch scripts, but `document_hash`, `source_uri`, and `document_version` are **not** persisted in the database. 
+*   **Future Requirement:** Move to dataset manifests or object storage (LFS) and persist document hashes in `DocumentChunk` metadata.
+
+## 11. Database Architecture
 *   **Tables:** `datasets`, `dataset_versions`, `evaluation_examples`, `system_configs`, `evaluation_runs`, `executions`, `metric_results`, `document_chunks`, `human_labels`.
 *   **JSONB:** Heavily used for metadata, retrieval config, and evidence breakdowns.
 *   **Migrations:** Currently ad-hoc Python scripts in `migrations/`. No Alembic.
 
-## 11. System Adapter Architecture
+## 12. System Adapter Architecture
 `BaseSystemAdapter` -> `MockSystemAdapter`, `OpenRouterAdapter`, `RAGAdapter`.
-The adapter returns a dict with `answer`, `retrieved_evidence`, `latency_ms`, `cost`, `tokens_in`, `tokens_out`, `error`.
+The adapter returns a dict with `answer`, `retrieved_evidence`, `latency_ms`, `cost`, `tokens_in`, `tokens_out`, `error`. Evaluation code must not modify the system-under-test.
 
-## 12. Retrieval / RAG Architecture
+## 13. Retrieval / RAG Architecture
 `RetrievalEngine` supports `dense` (pgvector), `postgres_fts` (tsvector), and `hybrid` (RRF).
 *   **RRF:** Pure function `fuse_rrf()` in `retrieval.py`. Uses `chunk_id` as unique key.
 *   **Config-Driven:** `top_k` and `embedding_model` are passed from `SystemConfig` to the adapter.
 
-## 13. Evaluation Architecture
-`BaseEvaluator` (async). Returns `score` (-1.0 to 1.0), `explanation`, `evidence_breakdown`, `status`.
+## 14. Evaluation Architecture
+`BaseEvaluator` (async). 
 *   **Deterministic:** `LatencyEvaluator`, `SourceRecallEvaluator` (v2: chunk-level), `ToolSelectionEvaluator`, `AbstentionEvaluator`.
 *   **LLM-as-Judge:** `LLMJudgeEvaluator` (faithfulness), `AnswerQualityEvaluator` (correctness/completeness), `CitationEvaluator` (citation support), `ReferenceAnswerEvaluator` (ground truth match).
-*   **Semantics:** `-1.0` means indeterminate/evaluator error. `0.0` means failure. `1.0` means success.
 
-## 14. Metric Semantics Registry (Example)
+## 15. Evaluator Result Contract
+Evaluators return `score` (-1.0 to 1.0), `explanation`, `evidence_breakdown`, `status`.
+*   `score = 1.0` -> valid success
+*   `score = 0.0` -> valid failure
+*   `score = -1.0` -> indeterminate/evaluator failure
+*   `status` -> authoritative indicator of evaluation execution state.
+
+**Contract for Indeterminate results (`-1.0`):**
+*   Must not be silently treated as failures.
+*   Must not enter quality averages.
+*   Must be countable.
+*   Must be visible in run diagnostics.
+
+## 16. Metric Semantics Registry (Example)
 *   **Name:** `source_recall@k`
 *   **Definition:** Fraction of examples where at least one expected source appears in top-k retrieved chunks.
 *   **Range:** [0,1]. Higher is better.
 *   **Ground truth:** `expected_sources` or `gold_chunk_ids`.
 *   **Limitations:** Document-level recall does not prove evidence-level correctness.
+*   **Note:** The registry is currently documentation-level unless an actual code-backed registry exists.
 
-## 15. Run Engine
+## 17. Run Engine
 `RunEngine` processes examples **sequentially**. It creates an `Execution`, calls the adapter, runs the evaluators, and saves `MetricResult`s. DB sessions are closed immediately after fetching data.
 
-## 16. Analysis Engine
+## 18. Analysis Engine
 Split into `analysis/` directory:
 *   `aggregation.py`: Global averages and slice-based metrics.
 *   `statistics.py`: Paired bootstrap CIs (seed=42, 1000 iters).
@@ -134,32 +155,42 @@ Split into `analysis/` directory:
 *   `regression.py`: Threshold + Statistical Significance (CI excludes zero).
 *   `calibration.py`: Pearson, MAE, Confusion Matrix for HITL.
 
-## 17. Statistical Analysis & Regression
-`compare_runs()` calculates paired differences and bootstraps the mean difference. If the 95% CI excludes zero, it is significant.
-`check_regression()` flags a metric if it drops by `threshold` (e.g., 2%) AND `is_significant` is True. Latency is threshold-only (500ms).
+## 19. Statistical Methodology
+`compare_runs()` calculates paired differences and bootstraps the mean difference. If the 95% CI excludes zero, it is significant. **Note:** This is the current implementation's decision rule, not a universal definition of statistical significance. The framework currently does not establish equivalence when the CI contains zero.
 
-## 18. HITL Calibration
-`HumanLabel` stores `human_score`, `failure_category`, `comment`. In the current N=5 pilot sample, the judge's mean score was 0.132 higher than human scores, indicating apparent leniency in this pilot sample. **This is not evidence that the judge is globally 13.2% too lenient.**
+## 20. Regression Methodology
+`check_regression()` flags a metric if it drops by `threshold` (e.g., 2%) AND `is_significant` is True. Latency is threshold-only (500ms). **Future work:** Consider explicit effect-size reporting rather than only threshold/significance flags.
 
-## 19. Caching & Cost Accounting
-`cache.py` uses Redis. Keys are version-aware. `pickle` is used for serialization.
+## 21. HITL Calibration
+`HumanLabel` stores `human_score`, `failure_category`, `comment`. In the current N=5 pilot sample, the judge's mean score was 0.132 higher than human scores, indicating apparent leniency in this pilot sample. **N=5 is sufficient to exercise the calibration pipeline, not to validate judge reliability.**
+
+## 22. Caching & Cost Accounting
+`cache.py` uses Redis. Keys are version-aware. `pickle` is used for serialization. **Security:** Redis cache is trusted infrastructure. Pickle must never be used on attacker-controlled cache contents. If the Redis trust boundary changes, replace pickle with a safe serialization format.
 Cost is `estimated_cost`: hardcoded pricing in `rag_adapter.py` based on token counts. Pricing must be versioned by provider/model/date.
 
-## 20. Experiment Provenance Matrix
+## 23. Experiment Provenance Matrix
 | Parameter         | Persisted? | Where?       | Required for reproduction? |
 | ----------------- | ---------- | ------------ | -------------------------- |
 | Dataset version   | Yes        | EvalRun      | YES                        |
-| Code SHA          | No         | -            | YES                        |
+| Code SHA          | **No**     | -            | **YES (P0 Gap)**           |
 | Model             | Yes        | SystemConfig | YES                        |
 | Prompt version    | Yes        | SystemConfig | YES                        |
 | Judge             | Yes        | MetricResult | YES                        |
 | Retrieval config  | Yes        | SystemConfig | YES                        |
 | Evaluator version | Yes        | MetricResult | YES                        |
 | Seed              | Yes (stats)| Analysis      | Depends                    |
-| Dependency lock   | No         | -            | YES                        |
+| Dependency lock   | **No**     | -            | **YES (P0 Gap)**           |
 | Cache state       | No         | -            | For latency                |
 
-## 21. Engineering Lessons / Bug History
+## 24. Stochasticity / Repeated-Trial Evaluation
+*   **Current State:** The system evaluates LLMs at `temperature=0.0`. It executes exactly one trial per example.
+*   **Limitation:** LLMs are stochastic. A single trial does not account for variance.
+*   **Future Work (P1):** Support repeated trials per example to account for model stochasticity in confidence intervals.
+
+## 25. Multiple Comparisons
+Current regression analysis evaluates metrics independently; multiple-comparison control (e.g., Bonferroni/FDR) is not currently implemented.
+
+## 26. Engineering Lessons / Bug History
 1.  **Neon Idle Timeouts:** Holding DB sessions open during API calls causes `InterfaceError`. Fix: Short-lived sessions.
 2.  **MissingGreenlet:** Lazy loading outside async session. Fix: `selectinload`.
 3.  **JSONB Mutation:** SQLAlchemy doesn't detect in-place JSONB dict mutations. Fix: Raw SQL `jsonb_set`.
@@ -168,34 +199,61 @@ Cost is `estimated_cost`: hardcoded pricing in `rag_adapter.py` based on token c
 6.  **Evaluator Errors:** API timeouts returning `0.0` dragged down averages. Fix: Return `-1.0` and filter in aggregation.
 7.  **Typer Async:** `async def` commands aren't awaited by Typer. Fix: Wrap in `def run(): asyncio.run()`.
 
-## 22. Architectural Invariants
+## 27. Architectural Invariants
 *   **I1 — Evaluator failure ≠ system failure:** `-1.0` must remain distinct from `0.0`.
 *   **I2 — Chunk identity is immutable:** RRF must use `chunk_id`, not `(source, text)`.
 *   **I3 — DB sessions must not span external API calls:** Protects against Neon timeouts.
 *   **I4 — Cache identity must include evaluator version:** Prevents stale results.
 *   **I5 — Dataset identity must be deterministic:** Example IDs must not rely on Python `hash()`.
 *   **I6 — Benchmark numbers must always carry sample size:** Never report `96.8%` without `N=36, dataset=v1`.
+*   **I7 — Every evaluator has explicit metric semantics.**
+*   **I8 — Every evaluator version change invalidates incompatible cached results.**
+*   **I9 — Every benchmark result must identify dataset version + system configuration.**
+*   **I10 — Evaluation code must not modify the system-under-test.**
 
-## 23. Things That Must Not Be Changed Casually
-*   `-1.0` score semantics in evaluators.
+## 28. Things That Must Not Be Changed Casually
+*   Do not change the `-1.0` evaluator-error semantics without first auditing all aggregation, statistics, regression, caching, persistence, and downstream consumers and adding migration/regression tests.
+*   Do not reintroduce long-lived DB sessions across external API calls.
 *   `chunk_id` as RRF identity key.
-*   Short-lived DB session pattern.
 *   Cache key versioning logic.
 
-## 24. Security & Testing
+## 29. Security & Testing
 `.env` for secrets. `pickle` in Redis is a risk if Redis is compromised.
 2 test modules currently present (`test_rrf.py`, `test_cache.py`). Very low coverage.
 
-## 25. Performance / Scalability
+## 30. Performance / Scalability
 **Sequential execution.** Will be slow for 1000s of examples. Needs `asyncio.Semaphore`.
 
-## 26. Documentation vs Implementation Contradictions
+## 31. Documentation vs Implementation Contradictions
 README previously claimed "BM25" and "concurrent". Fixed to "PostgreSQL FTS" and "sequential".
 
-## 27. EvalOS ↔ AgentOS Boundary
+## 32. EvalOS ↔ AgentOS Boundary
 EvalOS evaluates AgentOS traces. Not implemented yet. EvalOS must not become an AgentOS execution dependency. It should receive structured traces, not run AgentOS internals.
+**Future Minimum Trace Contract:**
+AgentTrace
+├── run_id
+├── task_id
+├── model
+├── input
+├── final_output
+├── tool_calls[]
+│   ├── tool_name
+│   ├── arguments
+│   ├── result
+│   └── latency
+├── retrieval_events[]
+├── token_usage
+├── cost
+├── timestamps
+└── error
 
-## 28. Flagship Assessment
+## 33. EvalOS ↔ WOE Boundary
+Not implemented.
+AgentOS -> produces execution/agent trace.
+WOE -> produces workflow execution trace.
+EvalOS -> evaluates both.
+
+## 34. Flagship Assessment
 **Advanced research prototype / early evaluation infrastructure.**
 *   Architecture: ~8/10
 *   Engineering: ~7/10
@@ -206,7 +264,7 @@ EvalOS evaluates AgentOS traces. Not implemented yet. EvalOS must not become an 
 *   Benchmark evidence: ~5.5/10
 *   Research potential: ~9/10
 
-## 29. Prioritized Roadmap
+## 35. Prioritized Roadmap
 ### P0 — Fix measurement foundations
 1.  **Deterministic example IDs** (SHA256 instead of Python hash).
 2.  **Experiment/run provenance** (Code SHA, dependency lock).
@@ -220,29 +278,30 @@ EvalOS evaluates AgentOS traces. Not implemented yet. EvalOS must not become an 
 8.  **Bounded concurrency** (`asyncio.Semaphore`).
 9.  **Failure-injection tests**.
 10. **Cache/latency benchmark separation**.
+11. **Experiment abstraction** (Group runs under experiments).
 
 ### P1 — Strengthen evaluation science
-11. **100+ manually verified reference answers.**
-12. **Larger HITL calibration** (multiple human annotators).
-13. **Evaluator bias analysis.**
-14. **Benchmark stratification.**
+12. **100+ manually verified reference answers.**
+13. **Larger HITL calibration** (multiple human annotators).
+14. **Evaluator bias analysis.**
+15. **Benchmark stratification.**
+16. **Stochastic / Repeated-trial evaluation.**
 
 ### P2 — Platformization
-15. **Experiment abstraction.**
-16. **Run comparison API & Dashboard.**
-17. **CI/CD integration.**
-18. **AgentOS trace adapter.**
+17. **Run comparison API & Dashboard.**
+18. **CI/CD integration.**
+19. **AgentOS trace adapter.**
 
-## 30. Instructions for the Next Engineer / AI Model
+## 36. Instructions for the Next Engineer / AI Model
 *   Read this document first.
 *   Do not interpret "implemented" as "validated".
-*   Do not touch `-1.0` evaluator logic.
+*   Do not change the `-1.0` evaluator logic without an impact audit.
 *   Do not hold DB sessions open.
 *   Do not rename `postgres_fts` to `bm25`.
 *   Keep cache keys version-aware.
 *   Add tests for new features.
 
-## 31. Repository Reference Map
+## 37. Repository Reference Map
 | Subsystem | File | Symbol |
 |---|---|---|
 | Database | `database.py` | `engine`, `AsyncSessionLocal` |
@@ -253,11 +312,13 @@ EvalOS evaluates AgentOS traces. Not implemented yet. EvalOS must not become an 
 | Caching | `cache.py` | `get_cached`, `set_cached` |
 | CLI | `cli/main.py` | `app` |
 
-## 32. Evidence / Confidence Table
-| Claim | N | Dataset | Source | Implementation Verified | Artifact Verified | Methodologically Strong? | Confidence |
-| ----- | -: | ------- | ------ | ----------------------- | ----------------- | ------------------------ | ---------- |
+## 38. Evidence / Confidence Table
+*Artifact Verified = the benchmark result can be traced to a committed/generated run artifact containing sufficient information to independently inspect the reported result.*
+
+| Claim | N | Dataset | Source | Impl. Verified | Artifact Verified | Method. Strong? | Confidence |
+| ----- | -: | ------- | ------ | -------------- | ----------------- | --------------- | ---------- |
 | 88.9% Recall | 36 | v1 | benchmark | YES | YES | NO (no held-out set) | MEDIUM |
-| 96.8% Faithfulness | 36 | v1 | benchmark | YES | YES | NO (LLM judge, no held-out set) | MEDIUM |
+| 96.8% Faithfulness | 36 | v1 | benchmark | YES | YES | NO (LLM judge) | MEDIUM |
 | 100% Citation | 36 | v1 | benchmark | YES | YES | NO (LLM judge) | MEDIUM |
 | 100% Reference Correctness | 3 | v1 | benchmark | YES | YES | NO (N=3 pilot) | LOW |
 | Judge is 13.2% lenient | 5 | v1 | benchmark | YES | YES | NO (N=5 pilot) | LOW |
