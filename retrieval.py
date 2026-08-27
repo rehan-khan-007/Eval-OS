@@ -8,28 +8,26 @@ import os
 def fuse_rrf(dense_results: list[dict], fts_results: list[dict], top_k: int = 3, rrf_k: int = 60) -> list[dict]:
     """Pure function to fuse dense and FTS results using Reciprocal Rank Fusion."""
     scores = {}
-
     for rank, chunk in enumerate(dense_results):
         key = chunk["chunk_id"]
         scores[key] = {"score": scores.get(key, {}).get("score", 0.0) + 1.0 / (rrf_k + rank + 1), "data": chunk}
-
     for rank, chunk in enumerate(fts_results):
         key = chunk["chunk_id"]
         if key in scores:
             scores[key]["score"] += 1.0 / (rrf_k + rank + 1)
         else:
             scores[key] = {"score": 1.0 / (rrf_k + rank + 1), "data": chunk}
-
     fused = sorted(scores.items(), key=lambda item: item[1]["score"], reverse=True)[:top_k]
     return [val["data"] for key, val in fused]
 
 class RetrievalEngine:
-    def __init__(self, embedding_model: str = "openai/text-embedding-3-small"):
+    def __init__(self, embedding_model: str = "openai/text-embedding-3-small", api_key: str = None):
         self.client = AsyncOpenAI(
-            api_key=os.getenv("OPENROUTER_API_KEY"),
+            api_key=api_key or os.getenv("OPENROUTER_API_KEY"),
             base_url="https://openrouter.ai/api/v1"
         )
         self.embedding_model = embedding_model
+        self.api_key = api_key # Store for cache key separation if needed
 
     async def get_embedding(self, query: str) -> list[float]:
         cache_key = generate_cache_key("embedding", self.embedding_model, query)
@@ -44,25 +42,15 @@ class RetrievalEngine:
 
     async def dense_search(self, query: str, top_k: int = 3) -> list[dict]:
         query_embedding = await self.get_embedding(query)
-
         async with AsyncSessionLocal() as db:
-            stmt = (
-                select(DocumentChunk)
-                .order_by(DocumentChunk.embedding.cosine_distance(query_embedding))
-                .limit(top_k)
-            )
+            stmt = select(DocumentChunk).order_by(DocumentChunk.embedding.cosine_distance(query_embedding)).limit(top_k)
             result = await db.execute(stmt)
             chunks = result.scalars().all()
             return [{"chunk_id": c.id, "source": c.source, "text": c.text} for c in chunks]
 
     async def postgres_fts_search(self, query: str, top_k: int = 3) -> list[dict]:
         async with AsyncSessionLocal() as db:
-            stmt = (
-                select(DocumentChunk)
-                .where(text("search_vector @@ plainto_tsquery('english', :query)"))
-                .order_by(text("ts_rank(search_vector, plainto_tsquery('english', :query)) DESC"))
-                .limit(top_k)
-            )
+            stmt = select(DocumentChunk).where(text("search_vector @@ plainto_tsquery('english', :query)")).order_by(text("ts_rank(search_vector, plainto_tsquery('english', :query)) DESC")).limit(top_k)
             result = await db.execute(stmt, {"query": query})
             chunks = result.scalars().all()
             return [{"chunk_id": c.id, "source": c.source, "text": c.text} for c in chunks]
