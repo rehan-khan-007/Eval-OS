@@ -24,8 +24,8 @@ We ran 5-model benchmarks, retrieval ablations, A/B statistical comparisons, hum
 | Metric | Result |
 |---|---|
 | Best Retrieval (Dense) | **91.7%** (Recall@5) / 88.9% (Recall@3) |
-| Best Faithfulness (Groundedness) | **96.8%** (`gpt-4o-mini`) |
-| Answer Quality (Correctness + Completeness) | **82.6%** (`gpt-4o-mini`) |
+| Best Faithfulness (Groundedness) | **96.4%** (`claude-haiku-4.5`) |
+| Answer Quality (Correctness + Completeness) | **95.8%** (`claude-haiku-4.5`) |
 | Citation Correctness | **100.0%** (`gpt-4o-mini`) |
 | Reference Correctness (Ground Truth) | **100.0%** (3-sample pilot) |
 | LLM Judge Human Agreement | **100.0%** (Raw Agreement on HITL audit) |
@@ -91,9 +91,25 @@ We ran 5-model benchmarks, retrieval ablations, A/B statistical comparisons, hum
 * **[Chunk-Level Recall](docs/benchmarks/14_chunk_level_recall.md)**
   *Upgrades retrieval evaluation from document-level to chunk-level (Gold Evidence), proving the Dense retriever surfaces the exact correct chunk, not just a random chunk from the correct PDF.*
 
+
+---
+
+## Known Limitations
+
+EvalOS is an advanced research prototype. The following limitations apply to all benchmark results:
+
+*   **LLM-judge scores are not objective ground truth:** They are automated measurements subject to model bias.
+*   **External model behavior may change over time:** Provider updates can affect reproducibility.
+*   **Benchmark size is limited:** N=36 is sufficient for methodology validation, but insufficient for population-level claims.
+*   **Human calibration set is limited:** N=5 is sufficient to exercise the calibration pipeline, not to validate judge reliability globally.
+*   **Statistical conclusions are benchmark-specific:** Results apply only to the 47-document multi-domain corpus used.
+*   **Playground cases are not automatically benchmark truth:** Candidate cases require human review before entering the immutable benchmark.
+*   **Reproducibility is configuration-oriented:** The `run_fingerprint` guarantees identical configuration provenance, not identical execution outputs due to external API stochasticity.
+
 ---
 
 ## Verified Engineering Infrastructure
+
 
 EvalOS itself was built to be a reproducible evaluation framework. The infrastructure supporting these benchmarks is verified:
 

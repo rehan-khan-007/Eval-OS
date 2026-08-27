@@ -4,7 +4,7 @@
 
 Modern LLM systems are difficult to evaluate reliably. Given a new RAG pipeline or Agent, you shouldn't just inspect a few outputs and decide which "looks better." 
 
-EvalOS is a rigorous, full-stack framework that runs reproducible benchmarks, measures quality/cost/latency trade-offs, diagnoses *why* systems fail, and acts as a CI/CD gate for AI behavior.
+EvalOS is a rigorous, full-stack framework that runs reproducible benchmarks, measures quality/cost/latency trade-offs, diagnoses *why* systems fail, and acts as a CI/CD-ready regression gate for AI behavior.
 
 ---
 
@@ -21,8 +21,8 @@ EvalOS is deployed as a full-stack application. You can view the live dashboard 
 
 EvalOS was built to prove empirically what works, not to assume "bigger is always better." Here are real findings EvalOS observed on its own benchmark:
 
-*   **The "Expensive Model" Trap:** On this benchmark, `gpt-4o` cost ~15x more than `gpt-4o-mini`, but actually scored *lower* in faithfulness (hallucinated more) on the same RAG task.
-*   **The "Hybrid is Always Better" Myth:** EvalOS observed that Hybrid retrieval (Postgres FTS + Dense + RRF) actually *regressed* recall by 4 points compared to Dense-only, because FTS introduced noise on PDF-extracted text.
+*   **The Quality/Cost Trade-off:** On the final benchmark (N=36), `claude-haiku-4.5` achieved higher Answer Quality (95.8% vs 88.9%) and Faithfulness (96.4% vs 93.2%) than `gpt-4o-mini`, while `gpt-4o-mini` maintained a perfect 100% Citation Correctness score.
+*   **The "Hybrid is Always Better" Myth:** EvalOS observed that Hybrid retrieval (Postgres FTS + Dense + RRF) actually *regressed* recall by 4.2 pp compared to Dense-only (95% CI [-8.1, 0.1]). EvalOS correctly flagged this as `INCONCLUSIVE` rather than a proven regression, demonstrating scientific maturity.
 *   **The "Overly Cautious LLM" Bug:** EvalOS diagnosed a failure mode where the LLM had the correct context but abstained unnecessarily, proving global accuracy scores hide real failure modes.
 
 ---
