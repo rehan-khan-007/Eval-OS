@@ -11,6 +11,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+@app.get("/")
+async def root():
+    return {"status": "healthy", "service": "EvalOS API", "docs": "/docs"}
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "service": "EvalOS API"}
