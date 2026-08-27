@@ -91,6 +91,12 @@ We ran 5-model benchmarks, retrieval ablations, A/B statistical comparisons, hum
 * **[Chunk-Level Recall](docs/benchmarks/14_chunk_level_recall.md)**
   *Upgrades retrieval evaluation from document-level to chunk-level (Gold Evidence), proving the Dense retriever surfaces the exact correct chunk, not just a random chunk from the correct PDF.*
 
+### 15. Final v1.0.0 Benchmark
+* **[Final v1.0.0 Benchmark](docs/benchmarks/15_final_v1_benchmark.md)**
+  *The canonical, reproducible data point for the EvalOS v1.0.0 release. Compares gpt-4o-mini vs claude-haiku-4.5, revealing Haiku wins on quality/faithfulness while GPT-4o-mini wins on citation correctness.
+* **[Chunk-Level Recall](docs/benchmarks/14_chunk_level_recall.md)**
+  *Upgrades retrieval evaluation from document-level to chunk-level (Gold Evidence), proving the Dense retriever surfaces the exact correct chunk, not just a random chunk from the correct PDF.*
+
 
 ---
 
