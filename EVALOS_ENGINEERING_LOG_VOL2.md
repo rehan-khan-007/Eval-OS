@@ -256,3 +256,15 @@ During the infrastructure upgrades in Stage C, we encountered and fixed several 
 * **Fix:** Patched `evaluators.llm_judge.get_cached` and `set_cached` with `AsyncMock` in the test helper. This isolated the tests from the real cache, ensuring each test ran the mocked LLM client independently.
 
 **Result:** EvalOS now has 19 passing tests. The deterministic core (RRF, Cache Keys, Statistics, Regression Decisions, Evaluator Parsing) is mathematically verified.
+
+---
+
+## FA Phase 4: Playground Hardening & Candidate Cases
+
+**What was done:** The CTO audit (Final Audit Phase 4) required the public Playground endpoint to be secured against abuse and to close the evaluation loop without mutating the immutable benchmark dataset.
+
+**Architecture Change:**
+1. **Security Hardening:** Added `slowapi` to implement rate limiting (5 requests/minute per IP) on `/api/playground` and `/api/playground/save`. Added a 500-character `max_length` limit to the Playground question via Pydantic. Replaced all raw exception strings with generic "Internal Server Error" responses, logging the details server-side instead.
+2. **Save Candidate Case:** Added `POST /api/playground/save` endpoint. When a user finds an interesting failure in the Playground, they can save it. EvalOS writes this to a separate `dv-playground-candidates-v1` dataset with `status: "pending_review"`. This keeps the core benchmark immutable while building a pool of real-world failure cases for future human review.
+
+**Result:** EvalOS is now safe for public interaction. The Playground acts as an evaluation data acquisition interface, feeding candidate cases into a separate review pool rather than silently polluting the benchmark.

@@ -1,21 +1,36 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from database import AsyncSessionLocal
-from models import Experiment, EvaluationRun, SystemConfig
+from models import Experiment, EvaluationRun, SystemConfig, Dataset, DatasetVersion, EvaluationExample
 from analysis_engine import AnalysisEngine
 from adapters.rag_adapter import RAGAdapter
 from evaluators.llm_judge import LLMJudgeEvaluator
 from sqlalchemy import select
 from api.schemas import (
     ExperimentSchema, ExperimentDetailSchema, RunSummarySchema,
-    RunMetricsSchema, DiagnosisSchema, PlaygroundResponseSchema
+    RunMetricsSchema, DiagnosisSchema, PlaygroundResponseSchema,
+    SaveCandidateRequest, SaveCandidateResponse
 )
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+import uuid
+import hashlib
+import logging
+
+# Setup logging to ensure API keys are NEVER logged
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="EvalOS API",
     description="Reproducible Evaluation Infrastructure for AI Systems",
     version="1.0.0"
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.get("/")
 async def root():
@@ -89,15 +104,10 @@ async def slice_run(run_id: str, slice_field: str):
 
 # --- INTERACTIVE PLAYGROUND ---
 
-class PlaygroundRequest(BaseModel):
-    api_key: str
-    question: str
-    model: str = "openai/gpt-4o-mini"
-    judge_model: str = "openai/gpt-4o-mini"
-
 @app.post("/api/playground", response_model=PlaygroundResponseSchema)
-async def playground(req: PlaygroundRequest):
-    """Runs a live RAG + Evaluation pipeline using the user's API key."""
+@limiter.limit("5/minute")
+async def playground(request: Request, req: PlaygroundRequest):
+    """Runs a live RAG + Evaluation pipeline using the user's API key. Rate limited to 5 req/min."""
     try:
         adapter = RAGAdapter(
             model=req.model, 
@@ -123,5 +133,55 @@ async def playground(req: PlaygroundRequest):
             "judge": judge_result
         }
     except Exception as e:
-        # P0 Security Fix: Do not return raw exception strings in production
+        # P0 Security Fix: Do not return raw exception strings. Log server-side, return generic error.
+        logger.error(f"Playground error for question: {req.question[:50]}... Error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal Server Error. Check server logs.")
+
+@app.post("/api/playground/save", response_model=SaveCandidateResponse)
+@limiter.limit("5/minute")
+async def save_playground_candidate(request: Request, req: SaveCandidateRequest):
+    """Saves a playground run as a candidate evaluation case in a separate dataset (does not mutate core benchmark)."""
+    candidate_ds_id = "ds-playground-candidates"
+    candidate_dv_id = "dv-playground-candidates-v1"
+    
+    async with AsyncSessionLocal() as db:
+        # Ensure candidate dataset exists
+        ds = await db.get(Dataset, candidate_ds_id)
+        if not ds:
+            ds = Dataset(id=candidate_ds_id, name="Playground Candidate Cases")
+            db.add(ds)
+            
+        dv = await db.get(DatasetVersion, candidate_dv_id)
+        if not dv:
+            dv = DatasetVersion(id=candidate_dv_id, dataset_id=candidate_ds_id, version_tag="v1", commit_hash="n/a")
+            db.add(dv)
+            
+        # Create the example
+        ex_hash = hashlib.sha256(req.question.encode()).hexdigest()
+        ex_id = f"ex-{ex_hash[:16]}"
+        
+        # Prevent duplicates
+        existing = await db.get(EvaluationExample, ex_id)
+        if existing:
+            return {"status": "already_saved", "example_id": ex_id}
+
+        # Extract sources from evidence
+        sources = [e.get("source", "") for e in req.retrieved_evidence if e.get("source")]
+        
+        ex = EvaluationExample(
+            id=ex_id,
+            dataset_version_id=candidate_dv_id,
+            question=req.question,
+            reference_answer="", # Left blank for human review
+            task_type="playground_candidate",
+            domain="unknown",
+            metadata_json={
+                "expected_sources": sources,
+                "playground_answer": req.answer,
+                "status": "pending_review"
+            }
+        )
+        db.add(ex)
+        await db.commit()
+        
+    return {"status": "saved_as_candidate", "example_id": ex_id}

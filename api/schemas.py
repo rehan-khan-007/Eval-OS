@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Any
 
@@ -53,6 +53,13 @@ class DiagnosisSchema(BaseModel):
     negative_control_fail: list[dict]
     full_success: list[dict]
 
+class PlaygroundRequest(BaseModel):
+    api_key: str
+    # P0 Security Fix: Enforce max question length to prevent resource exhaustion
+    question: str = Field(..., max_length=500)
+    model: str = "openai/gpt-4o-mini"
+    judge_model: str = "openai/gpt-4o-mini"
+
 class PlaygroundResponseSchema(BaseModel):
     answer: Optional[str] = None
     retrieved_evidence: list[dict]
@@ -60,3 +67,13 @@ class PlaygroundResponseSchema(BaseModel):
     cost: float
     judge: dict
     error: Optional[str] = None
+
+# NEW: Schema for saving a playground run as a candidate case
+class SaveCandidateRequest(BaseModel):
+    question: str
+    answer: str
+    retrieved_evidence: list[dict]
+
+class SaveCandidateResponse(BaseModel):
+    status: str
+    example_id: str
